@@ -139,7 +139,7 @@ struct ExtraCard: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Text("\(i + 1)").font(Theme.title(14)).foregroundStyle(Theme.night)
                                     .frame(width: 24, height: 24).background(Circle().fill(color))
-                                Text(.init(step)).font(Theme.body(15, .medium)).foregroundStyle(.white)
+                                Text(LocalizedStringKey(step)).font(Theme.body(15, .medium)).foregroundStyle(.white)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }

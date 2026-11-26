@@ -289,7 +289,7 @@ struct Check: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green).font(.system(size: 20))
-            Text(.init(text)).font(Theme.body(17, .medium)).foregroundStyle(.white)
+            Text(LocalizedStringKey(text)).font(Theme.body(17, .medium)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
