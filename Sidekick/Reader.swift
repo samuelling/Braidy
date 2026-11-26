@@ -31,7 +31,27 @@ final class Reader: ObservableObject {
         "The Legend of Zelda: Link's Awakening",
     ]
 
-    let voices: [AVSpeechSynthesisVoice]
+    /// Installed English voices, best first (refreshes when the user downloads more).
+    @Published private(set) var voices: [AVSpeechSynthesisVoice]
+    /// Enhanced or Premium voices installed (the natural-sounding ones).
+    var goodVoiceCount: Int { voices.filter { $0.quality != .default }.count }
+
+    /// The console or device the game is on, chosen before searching.
+    @Published var platform: String {
+        didSet { defaults.set(platform, forKey: "platform") }
+    }
+    static let platforms: [(name: String, short: String, icon: String)] = [
+        ("Nintendo Switch 2", "Switch 2", "gamecontroller.fill"),
+        ("Nintendo Switch", "Switch", "gamecontroller"),
+        ("PlayStation 5", "PS5", "playstation.logo"),
+        ("Xbox Series X|S", "Xbox", "xbox.logo"),
+        ("PC", "PC", "desktopcomputer"),
+        ("iPad or iPhone", "iPad", "ipad"),
+        ("Something else", "", "questionmark.circle"),
+    ]
+    /// Claude's popular-games list per platform, fetched once per launch.
+    private var popularCache: [String: [ClaudeClient.GameMatch]] = [:]
+    private var voiceObserver: NSObjectProtocol?
 
     @Published var lastLine = ""
     @Published var lastSpeaker: String?
@@ -130,6 +150,7 @@ final class Reader: ObservableObject {
         zoom = d.object(forKey: "zoom") as? Double ?? 1
         game = savedGame
         gameDetail = d.string(forKey: "gameDetail") ?? ""
+        platform = d.string(forKey: "platform") ?? "Nintendo Switch 2"
         recentGames = d.stringArray(forKey: "recentGames") ?? (savedGame.isEmpty ? [] : [savedGame])
         characterVoices = d.object(forKey: "characterVoices") as? Bool ?? true
         sayNames = d.object(forKey: "sayNames") as? Bool ?? false
@@ -146,6 +167,9 @@ final class Reader: ObservableObject {
             self?.listener.setSelfSpeaking(s)
         }
         camera.onFrame = { [weak self] rows in self?.handle(rows) }
+        voiceObserver = NotificationCenter.default.addObserver(
+            forName: AVSpeechSynthesizer.availableVoicesDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.voices = Speaker.englishVoices() }
         updateCustomWords()
     }
 
@@ -351,9 +375,27 @@ final class Reader: ObservableObject {
         updateCustomWords()
     }
 
-    /// Official game titles matching what someone typed (partial, misspelled or a series name).
-    func searchGames(_ query: String) async throws -> [ClaudeClient.GameMatch] {
-        try await client.searchGames(query: query)
+    /// Games on the chosen platform matching what someone typed (partial, misspelled or a series name).
+    func searchGames(_ query: String, platform: String) async throws -> [ClaudeClient.GameMatch] {
+        try await client.searchGames(query: query, platform: platform)
+    }
+
+    func popularGames(platform: String) async throws -> [ClaudeClient.GameMatch] {
+        if let cached = popularCache[platform] { return cached }
+        let list = try await client.popularGames(platform: platform)
+        popularCache[platform] = list
+        return list
+    }
+
+    /// Switch the narrator and every character not set by hand to the best installed voices.
+    func useBestVoices() {
+        voices = Speaker.englishVoices()
+        if let best = voices.first { narratorVoice = best.identifier }
+        for var p in cast.cast(for: game) where !p.voiceLocked {
+            p.voiceID = VoiceCasting.pick(for: p, voices: voices, narrator: narratorVoice)
+            cast.upsert(p, game: game)
+        }
+        status = goodVoiceCount > 0 ? "Using the best voices on this iPad" : "No Enhanced or Premium voices installed yet"
     }
 
     /// Set the game, confirm it on screen, and look up its characters if they aren't known yet.

@@ -38,7 +38,7 @@ struct SettingsView: View {
     private var gameSection: some View {
         Section {
             NavigationLink {
-                GamePickerView(reader: reader)
+                PlatformPickerView(reader: reader)
             } label: {
                 HStack(alignment: .top) {
                     Text("Game")
@@ -114,6 +114,17 @@ struct SettingsView: View {
                 Image(systemName: "hare.fill").foregroundStyle(.secondary)
             }
             Button("Test the voice") { reader.test() }
+            if reader.goodVoiceCount < 3 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Voices sound robotic?", systemImage: "waveform.badge.exclamationmark")
+                        .font(.headline)
+                    Text("This iPad has \(reader.goodVoiceCount) natural-sounding English voice\(reader.goodVoiceCount == 1 ? "" : "s"). Download a few free Enhanced or Premium ones: iPad Settings › Accessibility › Spoken Content (or Read & Speak) › Voices › English. Ava, Zoe, Evan and Nathan (Premium) sound great. Then come back and tap Use the best voices.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+            Button("Use the best voices") { reader.useBestVoices() }
         }
     }
 
@@ -328,124 +339,6 @@ struct GameVoiceSection: View {
             Text("Voiced cutscenes")
         } footer: {
             Text("Sidekick listens for voice acting (on this iPad, nothing is recorded or sent). When a subtitle appears while the game is speaking, Sidekick shows it but doesn't read it; tap the repeat button to hear it anyway. Short grunts and \"Hmm!\" sounds don't count. People talking in the room can also make Sidekick stay quiet, so raise the setting if it skips lines it should read.")
-        }
-    }
-}
-
-/// Pick any game: recent ones, popular ones, anything typed, or Claude's matches for what was typed.
-struct GamePickerView: View {
-    @ObservedObject var reader: Reader
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var claudeResults: [ClaudeClient.GameMatch] = []
-    @State private var searching = false
-    @State private var searchNote: String?
-
-    private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
-    private func matches(_ g: String) -> Bool { trimmed.isEmpty || g.localizedCaseInsensitiveContains(trimmed) }
-
-    var body: some View {
-        let recent = reader.recentGames.filter(matches)
-        let popular = Reader.suggestedGames.filter { matches($0) && !reader.recentGames.contains($0) }
-        List {
-            if !reader.game.isEmpty && trimmed.isEmpty {
-                Section("Playing now") { row(reader.game) }
-            }
-            if !trimmed.isEmpty {
-                Section {
-                    Button { choose(trimmed) } label: {
-                        Label("Use \u{201C}\(trimmed)\u{201D}", systemImage: "checkmark.circle")
-                    }
-                    if reader.hasKey {
-                        Button { search() } label: {
-                            HStack {
-                                Label("Find \u{201C}\(trimmed)\u{201D} with Claude", systemImage: "sparkles")
-                                if searching { Spacer(); ProgressView() }
-                            }
-                        }
-                        .disabled(searching)
-                    }
-                }
-            }
-            if let best = claudeResults.first {
-                Section {
-                    Button { choose(best.title, detail: best.detail) } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 34))
-                                .foregroundStyle(.green)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(best.title).font(.headline).foregroundStyle(.primary)
-                                if !best.detail.isEmpty {
-                                    Text(best.detail).font(.subheadline).foregroundStyle(.secondary)
-                                }
-                                Text("Tap to use this game").font(.caption.weight(.semibold)).foregroundStyle(.green)
-                            }
-                        }
-                        .padding(.vertical, 6)
-                    }
-                } header: {
-                    Text("Best match")
-                }
-                if claudeResults.count > 1 {
-                    Section("Or did you mean") {
-                        ForEach(claudeResults.dropFirst(), id: \.self) { m in
-                            Button { choose(m.title, detail: m.detail) } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(m.title).foregroundStyle(.primary)
-                                    if !m.detail.isEmpty {
-                                        Text(m.detail).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if let searchNote {
-                Section { Text(searchNote).foregroundStyle(.secondary) }
-            }
-            if !recent.isEmpty {
-                Section("Recent") { ForEach(recent, id: \.self) { row($0) } }
-            }
-            if !popular.isEmpty {
-                Section("Popular") { ForEach(popular, id: \.self) { row($0) } }
-            }
-        }
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
-                    prompt: reader.hasKey ? "Type any game, then press return" : "Type any game")
-        .onSubmit(of: .search) { if reader.hasKey { search() } }
-        .navigationTitle("Game")
-    }
-
-    private func row(_ g: String) -> some View {
-        Button { choose(g) } label: {
-            HStack {
-                Text(g).foregroundStyle(.primary)
-                Spacer()
-                if g == reader.game { Image(systemName: "checkmark").foregroundStyle(.tint) }
-            }
-        }
-    }
-
-    private func choose(_ g: String, detail: String = "") {
-        reader.choose(game: g, detail: detail)
-        dismiss()
-    }
-
-    private func search() {
-        let q = trimmed
-        guard !q.isEmpty, !searching else { return }
-        searching = true
-        searchNote = nil
-        Task { @MainActor in
-            do {
-                claudeResults = try await reader.searchGames(q)
-                if claudeResults.isEmpty { searchNote = "Claude didn't find a matching game. You can still use what you typed." }
-            } catch {
-                searchNote = error.localizedDescription
-            }
-            searching = false
         }
     }
 }

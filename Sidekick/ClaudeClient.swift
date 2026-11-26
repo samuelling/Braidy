@@ -49,7 +49,8 @@ struct ClaudeClient {
     names it, age ("child", "adult" or "elder"), a description of at most 12 words, and voice settings for an \
     iOS text-to-speech voice that suit their species, size, age and personality: pitch from 0.5 (very deep, \
     e.g. a huge rock creature) through 1.0 (typical) to 2.0 (very high, e.g. a tiny sprite), and rate from \
-    0.7 (slow, ponderous) to 1.3 (quick, excitable). Keep most characters between 0.8 and 1.3 pitch.
+    0.7 (slow, ponderous) to 1.3 (quick, excitable). Keep most characters between 0.85 and 1.25 pitch; \
+    the voice sounds robotic at extremes, so tell characters apart mainly by gender, age and speed.
     Also give "say": the name respelled with hyphenated English syllables so a standard text-to-speech voice \
     pronounces it correctly (e.g. "Pikachu" → "Pee-kah-choo"), only when the voice would likely get it wrong; \
     otherwise leave "say" out.
@@ -92,6 +93,25 @@ struct ClaudeClient {
 
     struct GameReply: Decodable { var game: String; var confidence: Double? }
 
+    static var today: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d, yyyy"
+        return f.string(from: Date())
+    }
+
+    /// Popular, kid-friendly games on a platform right now, newest first.
+    func popularGames(platform: String) async throws -> [GameMatch] {
+        let prompt = """
+        Today is \(Self.today). Search the web and list 20 popular games on \(platform) that young children \
+        (about 4–10) play and that have on-screen text or dialogue, newest releases first, including this year's. \
+        Use each game's full official title, and for each give the platform label, release year, and what it is \
+        in at most 8 words.
+        Reply with only JSON: {"games":[{"title":"","platform":"","year":"","about":""}]}
+        """
+        let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 3000)
+        return try Self.decode(GameList.self, from: text).games.filter { !$0.title.isEmpty }
+    }
+
     struct GameMatch: Decodable, Hashable {
         var title: String
         var platform: String?
@@ -107,12 +127,14 @@ struct ClaudeClient {
     struct GameList: Decodable { var games: [GameMatch] }
 
     /// Games matching what someone typed, best match first.
-    func searchGames(query: String) async throws -> [GameMatch] {
+    func searchGames(query: String, platform: String) async throws -> [GameMatch] {
+        let on = platform.isEmpty ? "" : " on \(platform)"
         let prompt = """
-        Someone is choosing which video game their child is playing and typed "\(query)". It may be partial, \
-        misspelled, a nickname or a series name. Search the web as needed and list up to 8 video games that best \
-        match, most likely first, using each game's full official title. Prefer games on Nintendo Switch and \
-        Switch 2, then other consoles, and include recent releases.
+        Today is \(Self.today). Someone is choosing which video game their child is playing\(on) and typed \
+        "\(query)". It may be partial, misspelled, a nickname or a series name. Search the web (don't rely on \
+        memory: new releases, remakes and remasters often reuse an old title) and list up to 8 games\(on) that \
+        best match, most likely first, using each game's full official title. Only include games actually \
+        available or announced\(on), and prefer the newest version when several share a title.
         For each give the main platform(s) as a short label (e.g. "Switch 2"), the release year, and what the game is \
         in at most 8 words.
         Reply with only JSON: {"games":[{"title":"","platform":"","year":"","about":""}]}

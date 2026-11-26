@@ -28,9 +28,11 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable 
         guard !spoken.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         let u = AVSpeechUtterance(string: spoken)
-        let rate = baseRate * style.rate
+        // Big pitch and speed shifts make the synthesizer sound robotic, so a character's settings are
+        // compressed toward natural: pitch 0.5–2.0 maps to about 0.8–1.35, speed changes are softened.
+        let rate = baseRate * (1 + (style.rate - 1) * 0.6)
         u.rate = min(max(rate, AVSpeechUtteranceMinimumSpeechRate), AVSpeechUtteranceMaximumSpeechRate)
-        u.pitchMultiplier = min(max(style.pitch, 0.5), 2.0)
+        u.pitchMultiplier = min(max(1 + (style.pitch - 1) * 0.5, 0.8), 1.35)
         u.postUtteranceDelay = 0.1
         u.voice = AVSpeechSynthesisVoice(identifier: style.voiceID) ?? AVSpeechSynthesisVoice(language: "en-US")
         synth.speak(u)
