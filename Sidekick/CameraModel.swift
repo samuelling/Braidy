@@ -168,23 +168,57 @@ final class CameraModel: NSObject, ObservableObject {
 
     // MARK: Row assembly
 
-    /// Group recognized fragments into rows (top to bottom), each row left to right.
+    /// Put recognized fragments into reading order.
+    ///
+    /// 1. Lines: fragments at the same height that sit close together horizontally. (A choice at the
+    ///    same height as a dialogue line, but off to the side, stays separate.)
+    /// 2. Blocks: lines stacked closely with overlapping horizontal extent, such as a dialogue box with
+    ///    its name label, or a list of choices.
+    /// 3. Blocks are read left to right (top to bottom when they start at about the same x), and
+    ///    each block top to bottom.
     static func assemble(_ items: [TextRow]) -> [TextRow] {
-        let byY = items.sorted { $0.box.midY < $1.box.midY }
-        var rows: [[TextRow]] = []
-        for item in byY {
-            if let anchor = rows.last?.first,
-               abs(item.box.midY - anchor.box.midY) < min(item.box.height, anchor.box.height) * 0.5 {
-                rows[rows.count - 1].append(item)
+        var lines: [TextRow] = []
+        for item in items.sorted(by: { $0.box.minX < $1.box.minX }) {
+            if let i = lines.firstIndex(where: { line in
+                abs(line.box.midY - item.box.midY) < min(line.box.height, item.box.height) * 0.5
+                    && item.box.minX - line.box.maxX < max(line.box.height, item.box.height) * 2
+            }) {
+                lines[i].text += " " + item.text
+                lines[i].box = lines[i].box.union(item.box)
             } else {
-                rows.append([item])
+                lines.append(item)
             }
         }
-        return rows.map { row in
-            let sorted = row.sorted { $0.box.minX < $1.box.minX }
-            let box = sorted.dropFirst().reduce(sorted[0].box) { $0.union($1.box) }
-            return TextRow(text: sorted.map(\.text).joined(separator: " "), box: box)
+
+        var blocks: [[TextRow]] = []
+        for line in lines.sorted(by: { $0.box.minY < $1.box.minY }) {
+            if let b = blocks.firstIndex(where: { block in
+                let last = block[block.count - 1]
+                let overlap = min(last.box.maxX, line.box.maxX) - max(last.box.minX, line.box.minX)
+                let gap = line.box.minY - last.box.maxY
+                return overlap > min(last.box.width, line.box.width) * 0.3
+                    && gap < max(last.box.height, line.box.height) * 1.6
+            }) {
+                blocks[b].append(line)
+            } else {
+                blocks.append([line])
+            }
         }
+
+        // Bucket left edges (3% of the width) so blocks starting at about the same x sort by height.
+        func key(_ block: [TextRow]) -> (Int, CGFloat) {
+            let minX = block.map(\.box.minX).min() ?? 0
+            return (Int(minX / 0.03), block[0].box.minY)
+        }
+        let ordered = blocks.sorted { key($0) < key($1) }
+        var out: [TextRow] = []
+        for (i, block) in ordered.enumerated() {
+            for var line in block {
+                line.block = i
+                out.append(line)
+            }
+        }
+        return out
     }
 }
 

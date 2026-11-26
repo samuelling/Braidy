@@ -6,6 +6,27 @@ struct TextRow: Equatable {
     var text: String
     /// Normalized to the camera image, top-left origin.
     var box: CGRect
+    /// Which block of text this line belongs to (a dialogue box, a choice list…), in reading order.
+    var block: Int = 0
+
+    /// Lines in reading order, with a sentence break between blocks so speech pauses
+    /// between, say, the dialogue and the choices next to it.
+    static func joined<S: Sequence>(_ rows: S) -> String where S.Element == TextRow {
+        var out = ""
+        var lastBlock: Int?
+        for r in rows {
+            if out.isEmpty {
+                out = r.text
+            } else if r.block != lastBlock {
+                let ended = out.last.map { ".!?…:".contains($0) } ?? true
+                out += (ended ? " " : ". ") + r.text
+            } else {
+                out += " " + r.text
+            }
+            lastBlock = r.block
+        }
+        return out
+    }
 }
 
 /// Splits a dialogue box into its speaker label and body.
@@ -16,12 +37,12 @@ struct TextRow: Equatable {
 /// beneath it.
 enum SpeakerParser {
     static func split(_ rows: [TextRow], knownNames: [String]) -> (speaker: String?, body: String) {
-        let all = rows.map(\.text).joined(separator: " ")
+        let all = TextRow.joined(rows)
         guard rows.count >= 2 else { return (nil, all) }
 
         var first = rows[0].text.trimmingCharacters(in: .whitespacesAndNewlines)
         if first.hasSuffix(":") { first.removeLast() }
-        let body = rows.dropFirst().map(\.text).joined(separator: " ")
+        let body = TextRow.joined(rows.dropFirst())
         let firstNorm = DialogueTracker.normalize(first)
         guard !firstNorm.isEmpty else { return (nil, all) }
 
@@ -41,7 +62,7 @@ enum SpeakerParser {
         }
         let punctuation = CharacterSet(charactersIn: ".,!?…")
         let hasPunctuation = first.unicodeScalars.contains { punctuation.contains($0) }
-        let narrow = rows[0].box.width < rows[1].box.width * 0.6
+        let narrow = rows[1].block == rows[0].block && rows[0].box.width < rows[1].box.width * 0.6
         if words.count <= 3, first.count <= 24, capitalized, !hasPunctuation, narrow {
             return (first, body)
         }

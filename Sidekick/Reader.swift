@@ -216,7 +216,7 @@ final class Reader: ObservableObject {
         guard listening else { return }
         let names = characterVoices ? cast.names(for: game) : []
         let parsed: (speaker: String?, body: String) = characterVoices ? SpeakerParser.split(rows, knownNames: names)
-                                     : (speaker: nil, body: rows.map(\.text).joined(separator: " "))
+                                     : (speaker: nil, body: TextRow.joined(rows))
         if !parsed.body.isEmpty { frameSpeaker = parsed.speaker }
         if let line = tracker.ingest(parsed.body) {
             deliver(line, from: frameSpeaker)
@@ -278,7 +278,7 @@ final class Reader: ObservableObject {
     func readNow() {
         let rows = camera.rows
         let parsed: (speaker: String?, body: String) = characterVoices ? SpeakerParser.split(rows, knownNames: cast.names(for: game))
-                                     : (speaker: nil, body: rows.map(\.text).joined(separator: " "))
+                                     : (speaker: nil, body: TextRow.joined(rows))
         guard !parsed.body.isEmpty else { status = "No text in the reading box"; return }
         pendingLine?.cancel()
         tracker.markSpoken(parsed.body)
