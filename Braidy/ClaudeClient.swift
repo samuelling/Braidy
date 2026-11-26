@@ -56,6 +56,8 @@ struct ClaudeClient {
         var say: String?
         var pitch: Double?
         var rate: Double?
+        var role: String?
+        var voice: String?
     }
 
     private static let voiceGuide = """
@@ -68,6 +70,12 @@ struct ClaudeClient {
     Also give "say": the name respelled with hyphenated English syllables so a standard text-to-speech voice \
     pronounces it correctly (e.g. "Pikachu" → "Pee-kah-choo"), only when the voice would likely get it wrong; \
     otherwise leave "say" out.
+    Give "role": "star" for the few main characters the player hears most, "major" for important recurring \
+    characters, "minor" for everyone else.
+    Give "voice": one or two vivid sentences (40 to 300 characters) for an AI voice designer describing how the \
+    character should sound: gender, age, pitch, timbre, accent, pace and personality, e.g. "A tiny, bright, \
+    squeaky fairy girl with a quick, excited, sing-song voice and a hint of mischief." Base it on the \
+    character, never on a real actor, and keep it warm and clear enough for a young child.
     """
 
     /// The game's main speaking characters, researched with web search.
@@ -76,14 +84,14 @@ struct ClaudeClient {
         I'm building a reader that speaks a video game's dialogue aloud for a young child, using a different \
         voice per character. Search the web as needed and list the main speaking characters in the video game \
         "\(game)" (up to 40), including the names exactly as they appear in dialogue boxes and any alternate \
-        names shown in game (aliases). If the game's text is mostly narration or menus with few named speakers \
+        names shown in game (aliases). List the stars first. If the game's text is mostly narration or menus with few named speakers \
         (e.g. battle messages), list the characters that do speak.
         \(Self.voiceGuide)
         Also list up to 80 of the game's own words a child will meet in its text (places, items, creatures, \
         moves, abilities, made-up words), each with "say" in the same way, only when a standard voice would \
         mispronounce it.
         Reply with only JSON in this shape, no other text:
-        {"characters":[{"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0}],
+        {"characters":[{"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0,"role":"","voice":""}],
          "terms":[{"word":"","say":""}]}
         """
         let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 12000)
@@ -98,7 +106,7 @@ struct ClaudeClient {
         them, make a best guess from the name and the game.
         \(Self.voiceGuide)
         Reply with only JSON, no other text:
-        {"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0}
+        {"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0,"role":"","voice":""}
         Use the character's correctly spelled name for "name".
         """
         let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 2000)

@@ -341,6 +341,19 @@ struct CharacterEditor: View {
                 }
                 if reader.usingEleven && !reader.elevenVoices.isEmpty {
                     Section("ElevenLabs voice") {
+                        NavigationLink {
+                            VoiceDesignView(reader: reader, cast: cast, key: p.key)
+                        } label: {
+                            HStack {
+                                Label(p.designedVoiceID == nil ? "Design a custom voice" : "Custom voice",
+                                      systemImage: "wand.and.stars")
+                                    .foregroundStyle(Theme.yellow)
+                                if p.designedVoiceID != nil {
+                                    Spacer()
+                                    Text("Redesign").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                         Picker("Voice", selection: elevenBinding(p)) {
                             ForEach(reader.elevenVoices) { v in Text(v.summary).tag(v.voice_id) }
                         }
@@ -499,6 +512,21 @@ struct ElevenLabsSection: View {
                         }
                         Button("Test the narrator") { reader.test() }
                         Button("Re-pick every character's voice") { reader.castElevenVoices(force: true) }
+                        Button {
+                            reader.designMainVoices()
+                        } label: {
+                            HStack {
+                                Label("Design custom voices for the main characters", systemImage: "wand.and.stars")
+                                if reader.designingVoices { Spacer(); ProgressView() }
+                            }
+                        }
+                        .disabled(reader.game.isEmpty || reader.designingVoices)
+                        if let slots = reader.voiceSlots, slots.limit > 0 {
+                            LabeledContent("Voice slots used", value: "\(slots.used) of \(slots.limit)")
+                        }
+                        if reader.designedCount > 0 {
+                            Button("Remove this game's custom voices", role: .destructive) { reader.removeDesignedVoices() }
+                        }
                     }
                     LabeledContent("Used this month", value: "\(AudioCache.shared.charactersThisMonth.formatted()) characters")
                     HStack {
@@ -515,9 +543,10 @@ struct ElevenLabsSection: View {
             ArcadeHeader("Voices")
         } footer: {
             Text(reader.voiceEngine == "eleven"
-                 ? "Each character gets a natural voice that fits them. Every line is saved on this device, so it's only paid for once. If ElevenLabs can't be reached, Braidy uses the device's own voice."
+                 ? "Each character gets a natural voice that fits them. Custom voices are one-of-a-kind voices designed from how Claude describes each main character; each one uses a voice slot on your ElevenLabs plan (Free has 3). Every line is saved on this device, so it's only paid for once. If ElevenLabs can't be reached, Braidy uses the device's own voice."
                  : "The device's own voices are free and work offline.")
         }
+        .task { await reader.refreshVoiceSlots() }
         .onAppear {
             let mb = Double(AudioCache.shared.bytesOnDisk) / 1_000_000
             cacheNote = mb > 0.05 ? String(format: "%.1f MB saved", mb) : ""

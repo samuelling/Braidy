@@ -50,7 +50,7 @@ struct ExtrasSetupView: View {
                     steps: [
                         "Tap **Open ElevenLabs** below and make a free account. If it asks, choose **ElevenCreative**.",
                         "Go to **Developers › API Keys** and tap **Create Key**. Name it \u{201C}Braidy\u{201D}.",
-                        "Set permissions: **Text to Speech → Access** and **Voices → Read**. Leave everything else on **No access**.",
+                        "Set permissions: **Text to Speech → Access**, **Voices → Write**, **Voice Generation → Access** and **User → Read**. The last three let Braidy design custom character voices and check your voice slots. Leave everything else on **No access**.",
                         "Optional: set a monthly limit on the key so it can never spend more than your plan.",
                         "Tap **Copy**. The key starts with **sk_**. Come back and tap **Paste key**.",
                     ],

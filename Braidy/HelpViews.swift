@@ -84,7 +84,7 @@ struct PrivacyView: View {
                 ExplainRow(icon: "sparkles", color: Theme.cyan, title: "Claude (by Anthropic)",
                            text: "Receives the game's name, character names Braidy sees on screen, and anything you type in the game search. If you tap \"Ask Claude which game is on screen\", one camera picture is sent for that question. The words being read aloud are never sent to Claude.")
                 ExplainRow(icon: "waveform.circle.fill", color: Theme.pink, title: "ElevenLabs",
-                           text: "Receives the text of each line so it can turn it into speech. The audio comes back and is saved on this device, so the same line isn't sent twice. ElevenLabs may keep a history of generated audio in your ElevenLabs account.")
+                           text: "Receives the text of each line so it can turn it into speech. The audio comes back and is saved on this device, so the same line isn't sent twice. ElevenLabs may keep a history of generated audio in your ElevenLabs account. If you design custom character voices, it also receives each voice's written description, and the voices are saved in your ElevenLabs account until you remove them.")
                 ExplainRow(icon: "key.fill", color: Theme.yellow, title: "Your keys",
                            text: "The keys that connect the extras are stored in this device's secure Keychain and only ever sent to that company. Remove them any time in Options › Extras.")
 

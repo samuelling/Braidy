@@ -23,6 +23,12 @@ struct CharacterProfile: Codable, Identifiable, Hashable {
     var voiceID: String = ""
     /// ElevenLabs voice, when that engine is on.
     var elevenVoiceID: String?
+    /// How this character should sound, written by Claude, for designing a custom ElevenLabs voice.
+    var voiceDescription: String?
+    /// "star", "major" or "minor": how big a part they have in the game.
+    var role: String?
+    /// A voice Braidy designed for this character in the user's ElevenLabs account.
+    var designedVoiceID: String?
     /// True once someone picks this character's voice by hand, so Claude won't change it.
     var voiceLocked: Bool = false
     /// "claude", "seen" or "manual".

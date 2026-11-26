@@ -153,6 +153,10 @@ final class Reader: ObservableObject {
     }
     @Published private(set) var elevenVoices: [ElevenVoice] = []
     @Published private(set) var loadingElevenVoices = false
+    /// True while Braidy designs custom voices for the main characters.
+    @Published private(set) var designingVoices = false
+    /// The ElevenLabs plan's voice slots, once known.
+    @Published private(set) var voiceSlots: ElevenClient.VoiceSlots?
     var hasElevenKey: Bool { !elevenKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var usingEleven: Bool { voiceEngine == "eleven" && hasElevenKey }
     private var lastElevenError = Date.distantPast
@@ -398,8 +402,133 @@ final class Reader: ObservableObject {
         for var p in cast.cast(for: game) {
             if !force && !(p.elevenVoiceID ?? "").isEmpty { continue }
             if p.voiceLocked && !(p.elevenVoiceID ?? "").isEmpty { continue }
+            if p.designedVoiceID != nil { continue }
             p.elevenVoiceID = ElevenCasting.pick(for: p, voices: elevenVoices, narrator: elevenNarrator)
             cast.upsert(p, game: game)
+        }
+    }
+
+    // MARK: Custom ElevenLabs voices
+
+    private var elevenClient: ElevenClient {
+        ElevenClient(apiKey: elevenKey.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Characters with a custom voice in the current game.
+    var designedCount: Int { cast.cast(for: game).filter { $0.designedVoiceID != nil }.count }
+
+    /// Claude's description of the character's voice, or one built from what's known about them.
+    func voiceDescription(for p: CharacterProfile) -> String {
+        if let d = p.voiceDescription, d.count >= 20 { return d }
+        var who: [String] = []
+        switch p.age {
+        case "child": who.append("young")
+        case "elder": who.append("old")
+        default: break
+        }
+        if p.gender == "male" || p.gender == "female" { who.append(p.gender) }
+        who.append(p.species.isEmpty ? "character" : p.species)
+        var s = "A \(who.joined(separator: " ")) named \(p.name)"
+        if !game.isEmpty { s += " from the video game \(game)" }
+        if !p.about.isEmpty { s += ": \(p.about)" }
+        return s + ". Clear, expressive and friendly, easy for a young child to understand."
+    }
+
+    @MainActor
+    func refreshVoiceSlots() async {
+        guard hasElevenKey else { return }
+        voiceSlots = try? await elevenClient.slots()
+    }
+
+    @MainActor
+    func designSamples(_ description: String) async throws -> [ElevenClient.VoicePreview] {
+        try await elevenClient.designVoice(description: description)
+    }
+
+    /// Save a sample as the character's own voice (replacing any earlier custom voice).
+    @MainActor
+    func keepDesignedVoice(_ preview: ElevenClient.VoicePreview, key: String, description: String) async throws {
+        guard let p = cast.cast(for: game).first(where: { $0.key == key }) else { return }
+        let client = elevenClient
+        let name = "\(ElevenClient.designedPrefix)\(p.name) (\(game))"
+        let id = try await client.saveDesignedVoice(name: name, description: description, generatedID: preview.generatedID)
+        let old = p.designedVoiceID
+        if let old, old != id { try? await client.deleteVoice(old) }
+        // Re-read: the profile may have changed while waiting.
+        var q = cast.cast(for: game).first(where: { $0.key == key }) ?? p
+        q.designedVoiceID = id
+        q.elevenVoiceID = id
+        q.voiceDescription = description
+        q.voiceLocked = true
+        cast.upsert(q, game: game)
+        elevenVoices.removeAll { $0.voice_id == old }
+        elevenVoices.append(ElevenVoice(voice_id: id, name: name, labels: nil, description: description))
+        if let data = try? JSONEncoder().encode(elevenVoices) { defaults.set(data, forKey: "elevenVoices") }
+        voiceSlots = try? await client.slots()
+    }
+
+    /// Design and keep voices for the stars (then major characters), as many as the plan has room for.
+    func designMainVoices() {
+        guard hasElevenKey, !game.isEmpty, !designingVoices else { return }
+        designingVoices = true
+        let client = elevenClient
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.designingVoices = false }
+            let slots = try? await client.slots()
+            self.voiceSlots = slots
+            let free = slots?.free ?? 3
+            guard free > 0 else {
+                self.status = "No free voice slots on your ElevenLabs plan. Remove custom voices from another game first."
+                return
+            }
+            let rank: [String: Int] = ["star": 0, "major": 1]
+            let all = self.cast.cast(for: self.game).filter { $0.designedVoiceID == nil }
+            let ranked = all.filter { rank[$0.role ?? ""] != nil }
+                .sorted { rank[$0.role ?? ""]! < rank[$1.role ?? ""]! }
+            let todo = Array((ranked.isEmpty ? all : ranked).prefix(min(free, 6)))
+            guard !todo.isEmpty else {
+                self.status = all.isEmpty && self.designedCount > 0
+                    ? "Every character already has a custom voice."
+                    : "No characters yet. Look them up with Claude first."
+                return
+            }
+            var made = 0
+            for p in todo {
+                self.status = "Designing a voice for \(p.name)… (\(made + 1) of \(todo.count))"
+                do {
+                    let d = self.voiceDescription(for: p)
+                    let samples = try await client.designVoice(description: d)
+                    guard let first = samples.first else { continue }
+                    try await self.keepDesignedVoice(first, key: p.key, description: d)
+                    made += 1
+                } catch {
+                    self.status = ElevenClient.friendly(error)
+                    return
+                }
+            }
+            self.status = made == 1 ? "Designed 1 custom voice" : "Designed \(made) custom voices"
+        }
+    }
+
+    /// Delete this game's custom voices from the ElevenLabs account and go back to stock voices.
+    func removeDesignedVoices() {
+        guard hasElevenKey else { return }
+        let client = elevenClient
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for var p in self.cast.cast(for: self.game) {
+                guard let id = p.designedVoiceID else { continue }
+                try? await client.deleteVoice(id)
+                self.elevenVoices.removeAll { $0.voice_id == id }
+                p.designedVoiceID = nil
+                p.voiceLocked = false
+                p.elevenVoiceID = ElevenCasting.pick(for: p, voices: self.elevenVoices, narrator: self.elevenNarrator)
+                self.cast.upsert(p, game: self.game)
+            }
+            if let data = try? JSONEncoder().encode(self.elevenVoices) { self.defaults.set(data, forKey: "elevenVoices") }
+            self.voiceSlots = try? await client.slots()
+            self.status = "Removed this game's custom voices"
         }
     }
 
@@ -470,11 +599,13 @@ final class Reader: ObservableObject {
         p.age = (e.age ?? p.age).lowercased()
         p.about = e.about ?? p.about
         if let say = e.say, !say.isEmpty { p.say = say }
+        if let role = e.role, !role.isEmpty { p.role = role.lowercased() }
+        if let voice = e.voice, voice.count >= 20 { p.voiceDescription = voice }
         if !p.voiceLocked {
             if let pitch = e.pitch { p.pitch = min(max(pitch, 0.5), 2.0) } else { VoiceCasting.defaultStyle(&p) }
             if let rate = e.rate { p.rate = min(max(rate, 0.6), 1.5) }
             p.voiceID = VoiceCasting.pick(for: p, voices: voices, narrator: narratorVoice)
-            if !elevenVoices.isEmpty {
+            if !elevenVoices.isEmpty && p.designedVoiceID == nil {
                 p.elevenVoiceID = ElevenCasting.pick(for: p, voices: elevenVoices, narrator: elevenNarrator)
             }
         }

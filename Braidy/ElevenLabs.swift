@@ -11,6 +11,8 @@ struct ElevenVoice: Codable, Hashable, Identifiable {
 
     var gender: String { (labels?["gender"] ?? "").lowercased() }
     var age: String { (labels?["age"] ?? "").lowercased() }
+    /// A voice Braidy designed for a character (named "Braidy · …"). Kept out of automatic casting.
+    var isBraidyDesigned: Bool { name.hasPrefix(ElevenClient.designedPrefix) }
     /// "Rachel · female · young · calm"
     var summary: String {
         let extra = [labels?["gender"], labels?["age"], labels?["accent"], labels?["description"] ?? labels?["descriptive"]]
@@ -94,6 +96,109 @@ struct ElevenClient {
         return data
     }
 
+    // MARK: Custom voices (Voice Design)
+
+    static let designedPrefix = "Braidy · "
+
+    struct VoicePreview: Identifiable {
+        var id: String { generatedID }
+        let generatedID: String
+        let audio: Data
+    }
+
+    struct VoiceSlots {
+        var used: Int
+        var limit: Int
+        var free: Int { max(0, limit - used) }
+    }
+
+    /// How many voices the plan can hold and how many are in use.
+    func slots() async throws -> VoiceSlots {
+        var req = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/user/subscription")!)
+        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+        let json = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return VoiceSlots(used: json["voice_slots_used"] as? Int ?? 0, limit: json["voice_limit"] as? Int ?? 0)
+    }
+
+    /// Three sample voices made from a written description. Nothing is saved to the account yet.
+    func designVoice(description: String) async throws -> [VoicePreview] {
+        var req = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/text-to-voice/design")!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 90
+        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "voice_description": Self.fit(description),
+            "model_id": "eleven_multilingual_ttv_v2",
+            "auto_generate_text": true,
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+        let json = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        let previews = json["previews"] as? [[String: Any]] ?? []
+        return previews.compactMap { p in
+            guard let id = p["generated_voice_id"] as? String,
+                  let b64 = p["audio_base_64"] as? String,
+                  let audio = Data(base64Encoded: b64) else { return nil }
+            return VoicePreview(generatedID: id, audio: audio)
+        }
+    }
+
+    /// Keep a sample voice in the account. Uses one voice slot. Returns the new voice ID.
+    func saveDesignedVoice(name: String, description: String, generatedID: String) async throws -> String {
+        var req = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/text-to-voice")!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 60
+        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: Any] = [
+            "voice_name": String(name.prefix(80)),
+            "voice_description": Self.fit(description),
+            "generated_voice_id": generatedID,
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+        let json = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        guard let id = json["voice_id"] as? String else { throw Failure.api(0, "No voice ID came back") }
+        return id
+    }
+
+    /// Delete a voice from the account, freeing its slot.
+    func deleteVoice(_ id: String) async throws {
+        var req = URLRequest(url: URL(string: "https://api.elevenlabs.io/v1/voices/\(id)")!)
+        req.httpMethod = "DELETE"
+        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+    }
+
+    /// Voice descriptions must be 20–1000 characters.
+    private static func fit(_ d: String) -> String {
+        var s = d.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.count < 20 { s += " A clear, friendly, expressive character voice." }
+        return String(s.prefix(1000))
+    }
+
+    /// Plain-English version of an ElevenLabs error, for parents.
+    static func friendly(_ error: Error) -> String {
+        guard case Failure.api(let code, let msg)? = error as? Failure else { return error.localizedDescription }
+        let m = msg.lowercased()
+        if code == 401 || code == 403 || m.contains("permission") || m.contains("missing_permissions") {
+            return "Your ElevenLabs key needs two more permissions: Voice Generation and Voices (Write). In ElevenLabs › Developers › API Keys, edit the key to turn them on, or make a new key and paste it in Extras."
+        }
+        if m.contains("voice_limit") || (m.contains("limit") && m.contains("voice")) {
+            return "Your ElevenLabs plan has no free voice slots. Remove custom voices from another game, or upgrade the plan for more slots."
+        }
+        if code == 402 || m.contains("quota") || m.contains("credits") {
+            return "Out of ElevenLabs credits for this month."
+        }
+        return "ElevenLabs: \(msg)"
+    }
+
     private static func check(_ resp: URLResponse, _ data: Data) throws {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
@@ -158,8 +263,9 @@ final class AudioCache {
 /// Chooses an ElevenLabs voice that fits a character.
 enum ElevenCasting {
     static func pick(for p: CharacterProfile, voices: [ElevenVoice], narrator: String) -> String? {
-        guard !voices.isEmpty else { return nil }
-        var pool = voices
+        let stock = voices.filter { !$0.isBraidyDesigned }
+        guard !stock.isEmpty else { return nil }
+        var pool = stock
         if p.gender == "male" || p.gender == "female" {
             let g = pool.filter { $0.gender == p.gender }
             if !g.isEmpty { pool = g }
@@ -181,7 +287,8 @@ enum ElevenCasting {
 
     /// A calm, clear default narrator: prefer a voice described as a narrator, else the first.
     static func narrator(from voices: [ElevenVoice]) -> String? {
-        voices.first { v in
+        let voices = voices.filter { !$0.isBraidyDesigned }
+        return voices.first { v in
             let text = (v.labels?.values.joined(separator: " ") ?? "") + " " + (v.description ?? "")
             return text.lowercased().contains("narrat")
         }?.voice_id ?? voices.first?.voice_id
