@@ -330,7 +330,7 @@ final class Reader: ObservableObject {
     }
 
     func test(_ profile: CharacterProfile? = nil) {
-        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hi, I'm Braidy! I'll read the words on the screen for you."
+        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hi, I'm Bubble Buddy! I'll read the words on the screen for you."
         speaker.speak(line, style: style(for: profile))
     }
 

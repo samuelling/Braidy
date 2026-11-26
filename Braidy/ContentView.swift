@@ -183,7 +183,7 @@ struct DialogueBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text((reader.lastSpeaker ?? "Braidy").uppercased())
+                Text((reader.lastSpeaker ?? "Bubble Buddy").uppercased())
                     .font(Theme.title(compact ? 14 : 17)).tracking(1)
                     .padding(.horizontal, 14).padding(.vertical, 6)
                     .background(Capsule().fill(Theme.yellow))

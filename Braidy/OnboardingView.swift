@@ -73,8 +73,9 @@ struct OnboardingView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 40, style: .continuous))
                 .shadow(color: Theme.cyan.opacity(0.5), radius: 24)
                 .bounceIn()
-            Text("Hi, I'm Braidy!").font(Theme.title(40)).foregroundStyle(Theme.yellow)
-            Text("I read the words in video games out loud, so kids who are still learning to read can play on their own.")
+            Text("Hi, I'm Bubble Buddy!").font(Theme.title(40)).foregroundStyle(Theme.yellow)
+                .multilineTextAlignment(.center)
+            Text("Welcome to Braidy. I read the words in video games out loud, so kids who are still learning to read can play on their own.")
                 .font(Theme.body(20)).multilineTextAlignment(.center).foregroundStyle(.white)
             Text("Setup takes about two minutes.").font(Theme.body(16)).foregroundStyle(.white.opacity(0.65))
         }
