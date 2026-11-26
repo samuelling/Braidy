@@ -212,7 +212,6 @@ final class Reader: ObservableObject {
     }
 
     /// The speaker label in the most recent frame.
-    private var frameSpeaker: String?
     private var pendingLookups: Set<String> = []
     /// A settled line waiting to see whether the game is voicing it.
     private var pendingLine: DispatchWorkItem?
@@ -338,10 +337,41 @@ final class Reader: ObservableObject {
         let names = characterVoices ? cast.names(for: game) : []
         let parsed: (speaker: String?, body: String) = characterVoices ? SpeakerParser.split(rows, knownNames: names)
                                      : (speaker: nil, body: TextRow.joined(rows))
-        if !parsed.body.isEmpty { frameSpeaker = parsed.speaker }
+        if !parsed.body.isEmpty { vote(parsed.speaker, body: parsed.body) }
         if let line = tracker.ingest(parsed.body) {
-            deliver(line, from: frameSpeaker)
+            deliver(line, from: electedSpeaker())
         }
+    }
+
+    // A name label is often misread on a frame or two (or missed while the box animates in), and
+    // one bad frame used to decide the voice. So every frame of a line votes, and the line goes to
+    // the name seen most. A new line (text unlike the last frame's) starts a fresh vote, so the
+    // previous speaker's votes never carry over in a back-and-forth.
+    private var speakerVotes: [String: Int] = [:]
+    private var unlabeledFrames = 0
+    private var lastFrameBody = ""
+
+    private func vote(_ speaker: String?, body: String) {
+        let a = DialogueTracker.normalize(body), b = DialogueTracker.normalize(lastFrameBody)
+        let continues = !b.isEmpty && (a.hasPrefix(String(b.prefix(12))) || DialogueTracker.similarity(a, b) >= 0.6)
+        if !continues {
+            speakerVotes = [:]
+            unlabeledFrames = 0
+        }
+        lastFrameBody = body
+        if let speaker {
+            // Count misreads of a known character as that character.
+            let name = cast.match(speaker, game: game)?.name ?? speaker
+            speakerVotes[name, default: 0] += 1
+        } else {
+            unlabeledFrames += 1
+        }
+    }
+
+    private func electedSpeaker() -> String? {
+        guard let top = speakerVotes.max(by: { $0.value < $1.value }) else { return nil }
+        // A label seen on only a stray frame or two of a long unlabeled line is noise.
+        return top.value * 3 >= unlabeledFrames ? top.key : nil
     }
 
     /// Speak a settled line, unless the game is voicing it.
@@ -605,6 +635,10 @@ final class Reader: ObservableObject {
     /// Find or create the profile for a name read off the screen, asking Claude about newcomers.
     private func profileFor(speakerName name: String) -> CharacterProfile? {
         if let known = cast.match(name, game: game) { return known }
+        // A misread label ("Lnik") shouldn't become a new character with a different voice.
+        if DialogueTracker.normalize(name).count >= 4, let close = cast.match(name, game: game, threshold: 0.65) {
+            return close
+        }
         var p = CharacterProfile(name: name)
         p.voiceID = VoiceCasting.pick(for: p, voices: voices, narrator: narratorVoice)
         cast.upsert(p, game: game)

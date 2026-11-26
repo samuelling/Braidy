@@ -36,23 +36,54 @@ struct TextRow: Equatable {
 /// it looks like one: short, capitalized, no sentence punctuation, and narrower than the text
 /// beneath it.
 enum SpeakerParser {
+    /// Words that end in a colon at the start of a line but aren't speakers.
+    static let notNames: Set<String> = ["note", "tip", "hint", "warning", "objective", "quest", "reward", "goal",
+                                        "new", "info", "help", "lv", "hp", "pp", "exp", "level", "mission", "task",
+                                        "item", "items", "map", "menu", "time", "score", "chapter", "episode", "part"]
+
+    /// The known character whose name or alias is closest to what was read (≥ 0.8 similar).
+    static func bestKnown(_ text: String, in knownNames: [String]) -> String? {
+        let t = DialogueTracker.normalize(text)
+        guard !t.isEmpty else { return nil }
+        var best: (String, Double)?
+        for name in knownNames {
+            let n = DialogueTracker.normalize(name)
+            guard !n.isEmpty else { continue }
+            let s = DialogueTracker.similarity(t, n)
+            if s >= 0.8, s > (best?.1 ?? 0) { best = (name, s) }
+        }
+        return best?.0
+    }
+
     static func split(_ rows: [TextRow], knownNames: [String]) -> (speaker: String?, body: String) {
         let all = TextRow.joined(rows)
+        guard !rows.isEmpty else { return (nil, all) }
+
+        // 0. Some games print the speaker inline: "Mom: Right. All kids leave home someday."
+        let head = rows[0].text
+        if let colon = head.firstIndex(of: ":"), colon != head.startIndex {
+            let name = String(head[..<colon]).trimmingCharacters(in: .whitespaces)
+            let rest = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            let words = name.split(separator: " ")
+            let looksLikeName = words.count <= 3 && name.count <= 24
+                && words.allSatisfy { $0.first?.isUppercase ?? false }
+                && !notNames.contains(name.lowercased())
+                && !name.contains(where: { $0.isNumber })
+            if !rest.isEmpty, let who = bestKnown(name, in: knownNames) ?? (looksLikeName ? name : nil) {
+                var body = rows
+                body[0].text = rest
+                return (who, TextRow.joined(body))
+            }
+        }
         guard rows.count >= 2 else { return (nil, all) }
 
         var first = rows[0].text.trimmingCharacters(in: .whitespacesAndNewlines)
         if first.hasSuffix(":") { first.removeLast() }
         let body = TextRow.joined(rows.dropFirst())
-        let firstNorm = DialogueTracker.normalize(first)
-        guard !firstNorm.isEmpty else { return (nil, all) }
+        guard !DialogueTracker.normalize(first).isEmpty else { return (nil, all) }
 
-        // 1. Matches a character we already know for this game.
-        for name in knownNames {
-            let n = DialogueTracker.normalize(name)
-            if !n.isEmpty, DialogueTracker.similarity(firstNorm, n) >= 0.8 {
-                return (name, body)
-            }
-        }
+        // 1. Matches a character we already know for this game (the closest one).
+        if let name = bestKnown(first, in: knownNames) { return (name, body) }
 
         // 2. Looks like a name label.
         let words = first.split(separator: " ")

@@ -99,7 +99,7 @@ final class CastStore: ObservableObject {
     }
 
     /// The character whose name or alias matches what was read off the screen.
-    func match(_ name: String, game: String) -> CharacterProfile? {
+    func match(_ name: String, game: String, threshold: Double = 0.8) -> CharacterProfile? {
         let n = DialogueTracker.normalize(name)
         guard !n.isEmpty else { return nil }
         let all = games[Self.gameKey(game)] ?? [:]
@@ -108,7 +108,7 @@ final class CastStore: ObservableObject {
         for p in all.values {
             for candidate in [p.name] + p.aliases {
                 let s = DialogueTracker.similarity(n, DialogueTracker.normalize(candidate))
-                if s >= 0.8, s > (best?.1 ?? 0) { best = (p, s) }
+                if s >= threshold, s > (best?.1 ?? 0) { best = (p, s) }
             }
         }
         return best?.0
