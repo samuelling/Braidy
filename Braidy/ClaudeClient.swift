@@ -39,6 +39,8 @@ struct ClaudeClient {
     struct CastReply: Decodable {
         var characters: [Entry]
         var terms: [Term]?
+        /// "none", "some" or "full": how much of the game's dialogue is spoken aloud.
+        var voiced: String?
     }
 
     struct Term: Decodable {
@@ -90,9 +92,12 @@ struct ClaudeClient {
         Also list up to 80 of the game's own words a child will meet in its text (places, items, creatures, \
         moves, abilities, made-up words), each with "say" in the same way, only when a standard voice would \
         mispronounce it.
+        Also give "voiced": "none" if story dialogue is only on-screen text (grunts, gibberish, beeps or one-word \
+        exclamations don't count as voice acting), "some" if some scenes have spoken voice acting, or "full" if \
+        almost all dialogue is spoken aloud, for this exact version of the game.
         Reply with only JSON in this shape, no other text:
         {"characters":[{"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0,"role":"","voice":""}],
-         "terms":[{"word":"","say":""}]}
+         "terms":[{"word":"","say":""}], "voiced":""}
         """
         let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 12000)
         return try Self.decode(CastReply.self, from: text)
@@ -139,6 +144,8 @@ struct ClaudeClient {
         var platform: String?
         var year: String?
         var about: String?
+        /// "none", "some" or "full": how much of the game's dialogue is spoken aloud.
+        var voiced: String?
 
         /// "Switch · 2022 · Open-world monster-catching adventure"
         var detail: String {
@@ -158,8 +165,10 @@ struct ClaudeClient {
         best match, most likely first, using each game's full official title. Only include games actually \
         available or announced\(on), and prefer the newest version when several share a title.
         For each give the main platform(s) as a short label (e.g. "Switch 2"), the release year, and what the game is \
-        in at most 8 words.
-        Reply with only JSON: {"games":[{"title":"","platform":"","year":"","about":""}]}
+        in at most 8 words, and "voiced": "none" if story dialogue is only on-screen text (grunts, gibberish, beeps or one-word \
+        exclamations don't count as voice acting), "some" if some scenes have spoken voice acting, or "full" if \
+        almost all dialogue is spoken aloud.
+        Reply with only JSON: {"games":[{"title":"","platform":"","year":"","about":"","voiced":""}]}
         """
         let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 2000)
         return try Self.decode(GameList.self, from: text).games.filter { !$0.title.isEmpty }

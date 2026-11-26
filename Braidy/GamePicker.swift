@@ -146,13 +146,13 @@ struct GameSearchView: View {
     }
 
     private func choose(_ m: ClaudeClient.GameMatch) {
-        choose(title: m.title, detail: m.detail.isEmpty ? platformLabel : m.detail)
+        choose(title: m.title, detail: m.detail.isEmpty ? platformLabel : m.detail, voiced: m.voiced)
     }
 
     /// Keep same-named versions apart, e.g. "The Legend of Zelda: Ocarina of Time (Switch 2)".
-    private func choose(title: String, detail: String) {
+    private func choose(title: String, detail: String, voiced: String? = nil) {
         let name = short.isEmpty || title.localizedCaseInsensitiveContains(short) ? title : "\(title) (\(short))"
-        reader.choose(game: name, detail: detail)
+        reader.choose(game: name, detail: detail, voiced: voiced)
     }
 
     private func search() {

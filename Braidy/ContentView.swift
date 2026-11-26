@@ -87,7 +87,7 @@ struct TopHUD: View {
             .overlay(Capsule().strokeBorder(Theme.yellow, lineWidth: 2))
 
             StatusChip(camera: reader.camera, listener: reader.listener,
-                       listening: reader.listening, hearing: reader.quietWhenGameTalks)
+                       listening: reader.listening, hearing: reader.listensForVoices)
 
             if !reader.game.isEmpty && !compact {
                 HUDChip(tint: Theme.green) {

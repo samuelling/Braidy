@@ -109,6 +109,7 @@ final class Reader: ObservableObject {
             if let r = Self.savedRegion(defaults, key: Self.regionKey(game)), r != region { region = r }
             let zones = Self.savedZones(defaults, key: Self.ignoreKey(game))
             if zones != ignoreZones { ignoreZones = zones }
+            refreshGameListening()
             updateCustomWords()
         }
     }
@@ -135,6 +136,41 @@ final class Reader: ObservableObject {
             applyListening()
         }
     }
+    /// How much of the current game is voiced, from Claude: "none", "some", "full", or nil if unknown.
+    @Published private(set) var gameVoiced: String?
+    /// Whether to listen for voice acting in the current game. A text-only game turns the mic off,
+    /// so talk in the room can't make Braidy skip lines. A parent can override it per game.
+    @Published private(set) var listenThisGame = true
+    /// True when Braidy is actually listening for the game's voice.
+    var listensForVoices: Bool { quietWhenGameTalks && listenThisGame }
+
+    static func voicedKey(_ game: String) -> String { "voiced." + CastStore.gameKey(game) }
+    static func listenKey(_ game: String) -> String { "listen." + CastStore.gameKey(game) }
+
+    /// A parent's choice for this game, or nil to follow what Claude found.
+    var listenOverride: Bool? { defaults.object(forKey: Self.listenKey(game)) as? Bool }
+
+    func setListenThisGame(_ on: Bool?) {
+        if let on { defaults.set(on, forKey: Self.listenKey(game)) } else { defaults.removeObject(forKey: Self.listenKey(game)) }
+        refreshGameListening()
+    }
+
+    /// Remember Claude's answer about voice acting for a game.
+    func noteVoiced(_ voiced: String?, game title: String) {
+        guard let v = voiced?.lowercased(), ["none", "some", "full"].contains(v), !title.isEmpty else { return }
+        defaults.set(v, forKey: Self.voicedKey(title))
+        if title == game { refreshGameListening() }
+    }
+
+    private func refreshGameListening() {
+        gameVoiced = game.isEmpty ? nil : defaults.string(forKey: Self.voicedKey(game))
+        let on = listenOverride ?? (gameVoiced != "none")
+        if on != listenThisGame {
+            listenThisGame = on
+            applyListening()
+        }
+    }
+
     /// How sure the sound classifier must be that it hears speech (0.3–0.9).
     @Published var voiceSensitivity: Double {
         didSet {
@@ -211,6 +247,8 @@ final class Reader: ObservableObject {
             elevenVoices = saved
         }
 
+        gameVoiced = savedGame.isEmpty ? nil : d.string(forKey: Self.voicedKey(savedGame))
+        listenThisGame = (d.object(forKey: Self.listenKey(savedGame)) as? Bool) ?? (gameVoiced != "none")
         camera.setRegion(region)
         camera.setIgnoreZones(ignoreZones)
         camera.zoom = CGFloat(zoom)
@@ -272,7 +310,7 @@ final class Reader: ObservableObject {
     /// other audio) when listening for the game's voice. Speech plays even with the silent switch on.
     private func applyListening() {
         listener.stop()
-        let listen = quietWhenGameTalks
+        let listen = listensForVoices
         // Activating the audio session can block, so keep it off the main thread.
         audioQueue.async { [weak self] in
             let session = AVAudioSession.sharedInstance()
@@ -284,7 +322,7 @@ final class Reader: ObservableObject {
             }
             try? session.setActive(true)
             DispatchQueue.main.async {
-                guard let self, self.quietWhenGameTalks == listen, listen else { return }
+                guard let self, self.listensForVoices == listen, listen else { return }
                 self.listener.start()
             }
         }
@@ -313,7 +351,7 @@ final class Reader: ObservableObject {
     /// spoke from 1.5 s before the line settled until now. If it did, the line is shown but not read.
     private func deliver(_ line: String, from name: String?) {
         pendingLine?.cancel()
-        guard quietWhenGameTalks, listener.isRunning else {
+        guard listensForVoices, listener.isRunning else {
             say(line, from: name)
             return
         }
@@ -604,11 +642,17 @@ final class Reader: ObservableObject {
                 if let terms = reply.terms {
                     self.cast.setTerms(terms.map { GameTerm(word: $0.word, say: $0.say) }, game: game)
                 }
+                let wasListening = self.listenThisGame
+                self.noteVoiced(reply.voiced, game: game)
                 for e in entries {
                     let existing = self.cast.match(e.name, game: game) ?? CharacterProfile(name: e.name)
                     self.apply(e, to: existing, game: game)
                 }
-                self.status = "Found \(entries.count) characters"
+                var note = "Found \(entries.count) characters"
+                if wasListening && !self.listenThisGame && self.quietWhenGameTalks {
+                    note += ". It's a text-only game, so the mic is off"
+                }
+                self.status = note
             } catch {
                 self?.status = error.localizedDescription
             }
@@ -668,14 +712,17 @@ final class Reader: ObservableObject {
     }
 
     /// Set the game, confirm it on screen, and look up its characters if they aren't known yet.
-    func choose(game title: String, detail: String = "") {
+    func choose(game title: String, detail: String = "", voiced: String? = nil) {
+        noteVoiced(voiced, game: title)
         game = title
         gameDetail = detail
+        let mic = quietWhenGameTalks && gameVoiced == "none" && listenOverride == nil
+            ? " Text only, so the mic stays off." : ""
         if hasKey && cast.cast(for: title).isEmpty {
             lookUpCast()
-            status = "✓ Game set: \(title). Looking up its characters…"
+            status = "✓ Game set: \(title).\(mic) Looking up its characters…"
         } else {
-            status = "✓ Game set: \(title)"
+            status = "✓ Game set: \(title).\(mic)"
         }
     }
 

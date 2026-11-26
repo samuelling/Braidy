@@ -433,10 +433,34 @@ struct GameVoiceSection: View {
     @ObservedObject var reader: Reader
     @ObservedObject var listener: VoiceListener
 
+    private var voicedNote: String {
+        let found: String
+        switch reader.gameVoiced {
+        case "none": found = "Claude found no voice acting, just text."
+        case "some": found = "Claude found some voiced scenes."
+        case "full": found = "Claude found it's mostly voiced."
+        default: found = "Not known yet. Look up characters with Claude to check."
+        }
+        let mic = reader.listenThisGame ? "Mic on." : "Mic off, so talk in the room can't make Braidy skip lines."
+        return reader.listenOverride == nil ? "\(found) \(mic)" : "Set by you. \(mic)"
+    }
+
     var body: some View {
         Section {
             Toggle("Stay quiet when the game is talking", isOn: $reader.quietWhenGameTalks)
-            if reader.quietWhenGameTalks {
+            if reader.quietWhenGameTalks && !reader.game.isEmpty {
+                Toggle(isOn: Binding(get: { reader.listenThisGame },
+                                     set: { reader.setListenThisGame($0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Listen in \(reader.game)")
+                        Text(voicedNote).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if reader.listenOverride != nil {
+                    Button("Go back to what Claude found") { reader.setListenThisGame(nil) }
+                }
+            }
+            if reader.listensForVoices {
                 if listener.available == false {
                     Label("Braidy can't use the microphone. Allow it in the iPad's Settings › Braidy.",
                           systemImage: "mic.slash.fill")
