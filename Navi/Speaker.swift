@@ -19,9 +19,6 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     override init() {
         super.init()
         synth.delegate = self
-        // Speak even with the silent switch on.
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [])
-        try? AVAudioSession.sharedInstance().setActive(true)
     }
 
     func speak(_ text: String, style: VoiceStyle) {

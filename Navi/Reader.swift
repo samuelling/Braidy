@@ -5,6 +5,7 @@ import SwiftUI
 final class Reader: ObservableObject {
     let camera = CameraModel()
     let cast = CastStore()
+    let listener = VoiceListener()
     private let speaker = Speaker()
     private var tracker = DialogueTracker()
     private let defaults = UserDefaults.standard
@@ -26,6 +27,8 @@ final class Reader: ObservableObject {
 
     @Published var lastLine = ""
     @Published var lastSpeaker: String?
+    /// The last line was voiced by the game itself, so Navi stayed quiet.
+    @Published var lastLineWasVoiced = false
     @Published var isSpeaking = false
     @Published var status: String?
     @Published var lookingUp = false
@@ -33,7 +36,10 @@ final class Reader: ObservableObject {
     @Published var listening = true {
         didSet {
             camera.setListening(listening)
-            if !listening { speaker.stop() }
+            if !listening {
+                pendingLine?.cancel()
+                speaker.stop()
+            }
         }
     }
     @Published var region: CGRect {
@@ -64,6 +70,20 @@ final class Reader: ObservableObject {
     @Published var sayNames: Bool {
         didSet { defaults.set(sayNames, forKey: "sayNames") }
     }
+    /// Listen for the game's own voice acting and don't talk over it.
+    @Published var quietWhenGameTalks: Bool {
+        didSet {
+            defaults.set(quietWhenGameTalks, forKey: "quietWhenGameTalks")
+            applyListening()
+        }
+    }
+    /// How sure the sound classifier must be that it hears speech (0.3–0.9).
+    @Published var voiceSensitivity: Double {
+        didSet {
+            listener.threshold = voiceSensitivity
+            defaults.set(voiceSensitivity, forKey: "voiceSensitivity")
+        }
+    }
     @Published var apiKey: String {
         didSet { Keychain.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
@@ -71,6 +91,8 @@ final class Reader: ObservableObject {
     /// The speaker label in the most recent frame.
     private var frameSpeaker: String?
     private var pendingLookups: Set<String> = []
+    /// A settled line waiting to see whether the game is voicing it.
+    private var pendingLine: DispatchWorkItem?
 
     init() {
         let d = UserDefaults.standard
@@ -87,17 +109,42 @@ final class Reader: ObservableObject {
         game = d.string(forKey: "game") ?? ""
         characterVoices = d.object(forKey: "characterVoices") as? Bool ?? true
         sayNames = d.object(forKey: "sayNames") as? Bool ?? false
+        quietWhenGameTalks = d.object(forKey: "quietWhenGameTalks") as? Bool ?? true
+        voiceSensitivity = d.object(forKey: "voiceSensitivity") as? Double ?? 0.5
         apiKey = Keychain.load()
 
         camera.setRegion(region)
         camera.zoom = CGFloat(zoom)
         speaker.baseRate = Float(rate)
-        speaker.onSpeaking = { [weak self] s in self?.isSpeaking = s }
+        listener.threshold = voiceSensitivity
+        speaker.onSpeaking = { [weak self] s in
+            self?.isSpeaking = s
+            self?.listener.setSelfSpeaking(s)
+        }
         camera.onFrame = { [weak self] rows in self?.handle(rows) }
         updateCustomWords()
     }
 
-    func start() { camera.start() }
+    func start() {
+        camera.start()
+        applyListening()
+    }
+
+    /// Playback-only when not listening; play-and-record (still out of the speaker, mixing with
+    /// other audio) when listening for the game's voice. Speech plays even with the silent switch on.
+    private func applyListening() {
+        let session = AVAudioSession.sharedInstance()
+        listener.stop()
+        if quietWhenGameTalks {
+            try? session.setCategory(.playAndRecord, mode: .default,
+                                     options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothA2DP])
+            try? session.setActive(true)
+            listener.start()
+        } else {
+            try? session.setCategory(.playback, mode: .spokenAudio, options: [])
+            try? session.setActive(true)
+        }
+    }
 
     var hasKey: Bool { !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var client: ClaudeClient { ClaudeClient(apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines)) }
@@ -111,14 +158,48 @@ final class Reader: ObservableObject {
                                      : (speaker: nil, body: rows.map(\.text).joined(separator: " "))
         if !parsed.body.isEmpty { frameSpeaker = parsed.speaker }
         if let line = tracker.ingest(parsed.body) {
-            say(line, from: frameSpeaker)
+            deliver(line, from: frameSpeaker)
         }
+    }
+
+    /// Speak a settled line, unless the game is voicing it.
+    ///
+    /// Subtitles and the actor's voice start together, but the sound classifier needs a moment to
+    /// be sure it hears speech. So a settled line waits ~0.7 s, then Navi checks whether the game
+    /// spoke from 1.5 s before the line settled until now. If it did, the line is shown but not read.
+    private func deliver(_ line: String, from name: String?) {
+        pendingLine?.cancel()
+        guard quietWhenGameTalks, listener.isRunning else {
+            say(line, from: name)
+            return
+        }
+        let settled = Date()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingLine = nil
+            if self.listener.gameTalked(since: settled.addingTimeInterval(-1.5)) {
+                self.show(line, from: name)
+            } else {
+                self.say(line, from: name)
+            }
+        }
+        pendingLine = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+    }
+
+    /// The game voiced this line: put it on screen (Repeat still reads it) but stay quiet.
+    private func show(_ line: String, from name: String?) {
+        let profile = name.flatMap { profileFor(speakerName: $0) }
+        lastLine = line
+        lastSpeaker = profile?.name ?? name
+        lastLineWasVoiced = true
     }
 
     private func say(_ line: String, from name: String?) {
         let profile = name.flatMap { profileFor(speakerName: $0) }
         lastLine = line
         lastSpeaker = profile?.name ?? name
+        lastLineWasVoiced = false
         var text = line
         if sayNames, let who = lastSpeaker { text = "\(who): \(line)" }
         speaker.speak(text, style: style(for: profile))
@@ -138,6 +219,7 @@ final class Reader: ObservableObject {
         let parsed: (speaker: String?, body: String) = characterVoices ? SpeakerParser.split(rows, knownNames: cast.names(for: game))
                                      : (speaker: nil, body: rows.map(\.text).joined(separator: " "))
         guard !parsed.body.isEmpty else { status = "No text in the reading box"; return }
+        pendingLine?.cancel()
         tracker.markSpoken(parsed.body)
         say(parsed.body, from: parsed.speaker)
     }

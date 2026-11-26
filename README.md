@@ -12,6 +12,8 @@ The Switch 2's screen reader only covers the console's own menus, so it never re
 4. **Who's talking.** Zelda prints the speaker's name on a short line above the dialogue. If the first row matches a known character, or looks like a name label (≤ 3 capitalized words, no punctuation, narrower than the text under it), Navi uses that character's voice and doesn't read the label aloud. You can turn "say the character's name first" on if you want it read.
 5. **Speech.** Lines are spoken with AVSpeechSynthesizer and play even with the silent switch on. A newer line interrupts an older one, so mashing through dialogue keeps up. A few names get respelled so they're pronounced right (Hyrule, Zonai, Sheikah, Korok, Purah, Pokémon…).
 
+6. **Not talking over voice acting.** Some games mix text-only dialogue with voiced cutscenes that also show subtitles (e.g. the Switch 2 Zelda editions). Navi listens through the microphone with Apple's on-device sound classifier (SoundAnalysis) and tracks how confident it is that it hears speech, every ~0.25 s. When a line settles, Navi waits 0.7 s and checks whether the game spoke from 1.5 s before the line settled until then. If it heard at least ~0.75 s of speech, the line is shown with "The game said this" but not read aloud. NPC grunts and one-word exclamations are too short to count. Navi ignores the mic while it's speaking itself, plus a second after, so it doesn't hear its own voice. Nothing is recorded or sent anywhere. People talking in the room can trip it too; the sensitivity setting is in Settings › Voiced cutscenes, and it can be turned off there.
+
 The big cyan button says the last line again. **Read now** forces a read of whatever is in the box.
 
 ## Character voices (with Claude)

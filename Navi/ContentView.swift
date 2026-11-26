@@ -37,7 +37,8 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            StatusPill(camera: reader.camera, listening: reader.listening)
+            StatusPill(camera: reader.camera, listener: reader.listener, listening: reader.listening,
+                       hearing: reader.quietWhenGameTalks)
             if !reader.game.isEmpty {
                 Text(reader.game)
                     .font(.footnote.weight(.semibold))
@@ -65,10 +66,17 @@ struct ContentView: View {
 
     private var caption: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let who = reader.lastSpeaker {
-                Text(who)
-                    .font(.headline)
-                    .foregroundStyle(.yellow)
+            HStack(spacing: 10) {
+                if let who = reader.lastSpeaker {
+                    Text(who)
+                        .font(.headline)
+                        .foregroundStyle(.yellow)
+                }
+                if reader.lastLineWasVoiced {
+                    Label("The game said this", systemImage: "speaker.wave.2.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.purple)
+                }
             }
             Text(reader.lastLine.isEmpty ? "Point the camera at the screen. I'll read the words in the box out loud."
                                          : reader.lastLine)
@@ -136,7 +144,9 @@ struct ContentView: View {
 
 struct StatusPill: View {
     @ObservedObject var camera: CameraModel
+    @ObservedObject var listener: VoiceListener
     let listening: Bool
+    let hearing: Bool
 
     var body: some View {
         let seeing = listening && !camera.rows.isEmpty
@@ -146,9 +156,15 @@ struct StatusPill: View {
                 .frame(width: 12, height: 12)
             Text(!listening ? "Paused" : (seeing ? "I see words" : "Looking for words"))
                 .font(.footnote.weight(.semibold))
+            if listening && hearing && listener.gameTalking {
+                Divider().frame(height: 14)
+                Image(systemName: "waveform").foregroundStyle(.purple)
+                Text("Game is talking").font(.footnote.weight(.semibold))
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.ultraThinMaterial, in: Capsule())
+        .animation(.easeInOut(duration: 0.2), value: listener.gameTalking)
     }
 }
 

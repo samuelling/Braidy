@@ -15,6 +15,7 @@ struct SettingsView: View {
                 gameSection
                 charactersSection
                 voiceSection
+                GameVoiceSection(reader: reader, listener: reader.listener)
                 claudeSection
                 cameraSection
                 Section("Tips") {
@@ -282,5 +283,38 @@ struct CharacterEditor: View {
                 cast.upsert(q, game: reader.game)
             }
         )
+    }
+}
+
+/// Settings for staying quiet while the game's own voice acting plays.
+struct GameVoiceSection: View {
+    @ObservedObject var reader: Reader
+    @ObservedObject var listener: VoiceListener
+
+    var body: some View {
+        Section {
+            Toggle("Stay quiet when the game is talking", isOn: $reader.quietWhenGameTalks)
+            if reader.quietWhenGameTalks {
+                if listener.available == false {
+                    Label("Navi can't use the microphone. Allow it in the iPad's Settings › Navi.",
+                          systemImage: "mic.slash.fill")
+                        .foregroundStyle(.orange)
+                } else {
+                    HStack {
+                        Text("Hearing speech")
+                        ProgressView(value: min(max(listener.level, 0), 1))
+                            .tint(listener.level >= reader.voiceSensitivity ? .purple : .gray)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("Needs to be this sure it's a voice: \(Int(reader.voiceSensitivity * 100))%")
+                        Slider(value: $reader.voiceSensitivity, in: 0.3...0.9)
+                    }
+                }
+            }
+        } header: {
+            Text("Voiced cutscenes")
+        } footer: {
+            Text("Navi listens for voice acting (on this iPad, nothing is recorded or sent). When a subtitle appears while the game is speaking, Navi shows it but doesn't read it; tap the repeat button to hear it anyway. Short grunts and \"Hmm!\" sounds don't count. People talking in the room can also make Navi stay quiet, so raise the setting if it skips lines it should read.")
+        }
     }
 }
