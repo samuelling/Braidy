@@ -12,7 +12,9 @@ struct ContentView: View {
             let compact = geo.size.width < 600
             ZStack {
                 Color.black.ignoresSafeArea()
-                CameraStage(camera: reader.camera, region: $reader.region, editing: editing)
+                CameraStage(camera: reader.camera, region: $reader.region, editing: editing,
+                            ignoreZones: $reader.ignoreZones,
+                            ignoreText: { reader.addIgnoreZone(around: $0) })
                     .ignoresSafeArea()
                 // Darken the edges so the HUD reads over any picture.
                 LinearGradient(colors: [.black.opacity(0.55), .clear, .clear, .black.opacity(0.7)],
@@ -25,7 +27,8 @@ struct ContentView: View {
                            toggleBox: { editing.toggle(); Theme.tap() }) { showOptions = true }
                     Spacer(minLength: 0)
                     if editing {
-                        EditBanner { editing = false; Theme.success() }
+                        EditBanner(compact: compact, zoneCount: reader.ignoreZones.count,
+                                   addZone: { reader.addIgnoreZone(); Theme.tap() }) { editing = false; Theme.success() }
                     } else {
                         DialogueBox(reader: reader, compact: compact)
                         ControlBar(reader: reader, compact: compact)
@@ -304,21 +307,34 @@ struct ControlBar: View {
 }
 
 struct EditBanner: View {
+    var compact = false
+    var zoneCount = 0
+    var addZone: () -> Void = {}
     var done: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "hand.draw.fill").font(.system(size: 30, weight: .bold)).foregroundStyle(Theme.yellow)
+            if !compact {
+                Image(systemName: "hand.draw.fill").font(.system(size: 30, weight: .bold)).foregroundStyle(Theme.yellow)
+            }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Move the reading box").font(Theme.title(20)).foregroundStyle(.white)
-                Text("Drag the yellow box over where the words show up. Drag the dot to resize it.")
-                    .font(Theme.body(15)).foregroundStyle(.white.opacity(0.8))
+                Text("Move the reading box").font(Theme.title(compact ? 17 : 20)).foregroundStyle(.white)
+                Text("Drag the yellow box over where the words show up. To skip text that's always there (scores, timers, button hints), tap it, or add a pink ignore zone.")
+                    .font(Theme.body(compact ? 13 : 15)).foregroundStyle(.white.opacity(0.8))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            Button(action: done) {
-                Text("DONE").font(Theme.title(16)).padding(.horizontal, 22).padding(.vertical, 12)
+            VStack(spacing: 8) {
+                Button(action: addZone) {
+                    Label(compact ? "IGNORE" : "IGNORE ZONE", systemImage: "plus")
+                        .font(Theme.title(13)).padding(.horizontal, 14).padding(.vertical, 9)
+                }
+                .buttonStyle(ChunkyButtonStyle(color: Theme.pink, textColor: .white))
+                Button(action: done) {
+                    Text("DONE").font(Theme.title(16)).padding(.horizontal, 22).padding(.vertical, 12)
+                }
+                .buttonStyle(ChunkyButtonStyle(color: Theme.yellow, textColor: Theme.night))
             }
-            .buttonStyle(ChunkyButtonStyle(color: Theme.yellow, textColor: Theme.night))
         }
         .padding(18)
         .frame(maxWidth: 900)

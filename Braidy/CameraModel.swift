@@ -33,6 +33,7 @@ final class CameraModel: NSObject, ObservableObject {
 
     private let lock = NSLock()
     private var _region = CGRect(x: 0.06, y: 0.55, width: 0.88, height: 0.4)
+    private var _ignore: [CGRect] = []
     private var _listening = true
     private var _snapshot: ((Data?) -> Void)?
     private var lastAnalysis = Date.distantPast
@@ -59,6 +60,9 @@ final class CameraModel: NSObject, ObservableObject {
 
     func setRegion(_ r: CGRect) { lock.lock(); _region = r; lock.unlock() }
     func setListening(_ on: Bool) { lock.lock(); _listening = on; lock.unlock() }
+    /// Areas whose text is always skipped (score, HUD labels, button hints), top-left origin.
+    func setIgnoreZones(_ z: [CGRect]) { lock.lock(); _ignore = z; lock.unlock() }
+    private var ignoreZones: [CGRect] { lock.lock(); defer { lock.unlock() }; return _ignore }
     private var region: CGRect { lock.lock(); defer { lock.unlock() }; return _region }
     private var listening: Bool { lock.lock(); defer { lock.unlock() }; return _listening }
 
@@ -250,6 +254,7 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         try? handler.perform([request])
 
         var items: [TextRow] = []
+        let ignore = ignoreZones
         for obs in request.results ?? [] {
             guard let best = obs.topCandidates(1).first, best.confidence >= 0.3 else { continue }
             let s = best.string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -259,8 +264,14 @@ extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             let b = obs.boundingBox
             let full = CGRect(x: roi.minX + b.minX * roi.width, y: roi.minY + b.minY * roi.height,
                               width: b.width * roi.width, height: b.height * roi.height)
-            items.append(TextRow(text: s, box: CGRect(x: full.minX, y: 1 - full.maxY,
-                                                     width: full.width, height: full.height)))
+            let box = CGRect(x: full.minX, y: 1 - full.maxY, width: full.width, height: full.height)
+            // Skip text that sits mostly inside an ignore zone.
+            let area = max(box.width * box.height, 0.000001)
+            if ignore.contains(where: { z in
+                let i = z.intersection(box)
+                return !i.isNull && i.width * i.height / area > 0.5
+            }) { continue }
+            items.append(TextRow(text: s, box: box))
         }
         let rows = Self.assemble(items)
         let size = CGSize(width: width, height: height)

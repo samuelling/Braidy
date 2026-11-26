@@ -27,6 +27,9 @@ struct CameraStage: View {
     @ObservedObject var camera: CameraModel
     @Binding var region: CGRect
     var editing: Bool
+    @Binding var ignoreZones: [CGRect]
+    /// Tapping text while editing turns it into an ignore zone.
+    var ignoreText: ((CGRect) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -34,15 +37,26 @@ struct CameraStage: View {
             ZStack(alignment: .topLeading) {
                 CameraPreview(camera: camera)
                     .frame(width: geo.size.width, height: geo.size.height)
+                RegionBox(region: $region, frame: frame, editing: editing)
+                ForEach(ignoreZones.indices, id: \.self) { i in
+                    RegionBox(region: Binding(get: { i < ignoreZones.count ? ignoreZones[i] : .zero },
+                                              set: { if i < ignoreZones.count { ignoreZones[i] = $0 } }),
+                              frame: frame, editing: editing, color: Theme.pink, label: "IGNORE",
+                              minSize: CGSize(width: 0.03, height: 0.03),
+                              onDelete: { if i < ignoreZones.count { ignoreZones.remove(at: i) } })
+                }
+                // What Braidy can read right now. While editing, tap any of it to ignore it.
                 ForEach(Array(camera.rows.enumerated()), id: \.offset) { _, row in
                     let r = Self.place(row.box, in: frame)
                     RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.cyan.opacity(0.85), lineWidth: 2)
+                        .stroke(Color.cyan.opacity(0.85), lineWidth: editing ? 3 : 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.cyan.opacity(editing ? 0.15 : 0)))
                         .frame(width: r.width + 6, height: r.height + 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture { ignoreText?(row.box); Theme.tap() }
                         .position(x: r.midX, y: r.midY)
-                        .allowsHitTesting(false)
+                        .allowsHitTesting(editing && ignoreText != nil)
                 }
-                RegionBox(region: $region, frame: frame, editing: editing)
             }
         }
     }
@@ -53,34 +67,59 @@ struct CameraStage: View {
     }
 }
 
-/// The area Braidy reads. Drag to move; drag the yellow dot to resize.
+/// A box on the camera picture: the reading box (yellow) or an ignore zone (pink).
+/// Drag to move; drag the dot to resize; the ✕ removes an ignore zone.
 struct RegionBox: View {
     @Binding var region: CGRect
     let frame: CGRect
     let editing: Bool
+    var color: Color = .yellow
+    var label: String? = nil
+    var minSize = CGSize(width: 0.1, height: 0.06)
+    var onDelete: (() -> Void)? = nil
     @State private var start: CGRect?
 
     var body: some View {
         let r = CameraStage.place(region, in: frame)
+        let isZone = onDelete != nil
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.yellow.opacity(editing ? 0.12 : 0.001))
+            RoundedRectangle(cornerRadius: isZone ? 8 : 14)
+                .fill(color.opacity(editing ? 0.14 : (isZone ? 0.1 : 0.001)))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(editing ? Color.yellow : Color.white.opacity(0.6),
+                    RoundedRectangle(cornerRadius: isZone ? 8 : 14)
+                        .strokeBorder(editing ? color : (isZone ? color.opacity(0.6) : Color.white.opacity(0.6)),
                                       style: StrokeStyle(lineWidth: editing ? 4 : 2, dash: editing ? [] : [10, 8]))
                 )
+                .overlay(alignment: .topLeading) {
+                    if let label, editing || r.height > 30 {
+                        Text(label).font(Theme.title(11)).tracking(1).foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(color))
+                            .padding(4)
+                    }
+                }
                 .frame(width: r.width, height: r.height)
                 .position(x: r.midX, y: r.midY)
                 .gesture(move)
                 .allowsHitTesting(editing)
             if editing {
                 Circle()
-                    .fill(Color.yellow)
-                    .frame(width: 44, height: 44)
+                    .fill(color)
+                    .frame(width: isZone ? 34 : 44, height: isZone ? 34 : 44)
                     .shadow(radius: 4)
                     .position(x: r.maxX, y: r.maxY)
                     .gesture(resize)
+                if let onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .black))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(Theme.night))
+                            .overlay(Circle().strokeBorder(color, lineWidth: 2))
+                    }
+                    .position(x: r.maxX, y: r.minY)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -107,8 +146,8 @@ struct RegionBox: View {
                 let s = start ?? region
                 if start == nil { start = region }
                 var n = s
-                n.size.width = min(max(s.width + v.translation.width / max(frame.width, 1), 0.1), 1 - s.minX)
-                n.size.height = min(max(s.height + v.translation.height / max(frame.height, 1), 0.06), 1 - s.minY)
+                n.size.width = min(max(s.width + v.translation.width / max(frame.width, 1), minSize.width), 1 - s.minX)
+                n.size.height = min(max(s.height + v.translation.height / max(frame.height, 1), minSize.height), 1 - s.minY)
                 region = n
             }
             .onEnded { _ in start = nil }

@@ -79,6 +79,14 @@ final class Reader: ObservableObject {
             if !game.isEmpty { defaults.set(saved, forKey: Self.regionKey(game)) }
         }
     }
+    /// Parts of the screen whose text is never read (score, timers, button hints), per game.
+    @Published var ignoreZones: [CGRect] {
+        didSet {
+            camera.setIgnoreZones(ignoreZones)
+            defaults.set(ignoreZones.map { [$0.minX, $0.minY, $0.width, $0.height] },
+                         forKey: Self.ignoreKey(game))
+        }
+    }
     @Published var rate: Double {
         didSet { speaker.baseRate = Float(rate); defaults.set(rate, forKey: "rate") }
     }
@@ -99,6 +107,8 @@ final class Reader: ObservableObject {
                 defaults.set(recentGames, forKey: "recentGames")
             }
             if let r = Self.savedRegion(defaults, key: Self.regionKey(game)), r != region { region = r }
+            let zones = Self.savedZones(defaults, key: Self.ignoreKey(game))
+            if zones != ignoreZones { ignoreZones = zones }
             updateCustomWords()
         }
     }
@@ -176,6 +186,7 @@ final class Reader: ObservableObject {
         let savedGame = d.string(forKey: "game") ?? ""
         region = Self.savedRegion(d, key: Self.regionKey(savedGame))
             ?? Self.savedRegion(d, key: "region") ?? Self.defaultRegion
+        ignoreZones = Self.savedZones(d, key: Self.ignoreKey(savedGame))
         rate = d.object(forKey: "rate") as? Double ?? 0.42
         let vs = Speaker.englishVoices()
         voices = vs
@@ -201,6 +212,7 @@ final class Reader: ObservableObject {
         }
 
         camera.setRegion(region)
+        camera.setIgnoreZones(ignoreZones)
         camera.zoom = CGFloat(zoom)
         speaker.baseRate = Float(rate)
         speaker.elevenModel = elevenModel
@@ -226,6 +238,24 @@ final class Reader: ObservableObject {
     }
 
     static func regionKey(_ game: String) -> String { "region." + CastStore.gameKey(game) }
+    static func ignoreKey(_ game: String) -> String { "ignore." + CastStore.gameKey(game) }
+
+    static func savedZones(_ d: UserDefaults, key: String) -> [CGRect] {
+        guard let list = d.array(forKey: key) as? [[Double]] else { return [] }
+        return list.compactMap { a in a.count == 4 ? CGRect(x: a[0], y: a[1], width: a[2], height: a[3]) : nil }
+    }
+
+    /// Add an ignore zone: around some text (with a little margin), or a new box in the reading box.
+    func addIgnoreZone(around box: CGRect? = nil) {
+        let z: CGRect
+        if let box {
+            z = box.insetBy(dx: -0.012, dy: -0.012).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        } else {
+            let w = min(0.3, region.width * 0.5), h = min(0.12, region.height * 0.5)
+            z = CGRect(x: region.midX - w / 2, y: region.midY - h / 2, width: w, height: h)
+        }
+        ignoreZones.append(z)
+    }
 
     static func savedRegion(_ d: UserDefaults, key: String) -> CGRect? {
         guard let a = d.array(forKey: key) as? [Double], a.count == 4 else { return nil }
