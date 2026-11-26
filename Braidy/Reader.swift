@@ -114,6 +114,10 @@ final class Reader: ObservableObject {
     @Published var sayNames: Bool {
         didSet { defaults.set(sayNames, forKey: "sayNames") }
     }
+    /// Silly mode: Bubble Buddy calls the player "brodie" now and then.
+    @Published var brodie: Bool {
+        didSet { defaults.set(brodie, forKey: "brodie") }
+    }
     /// Listen for the game's own voice acting and don't talk over it.
     @Published var quietWhenGameTalks: Bool {
         didSet {
@@ -179,6 +183,7 @@ final class Reader: ObservableObject {
         recentGames = d.stringArray(forKey: "recentGames") ?? (savedGame.isEmpty ? [] : [savedGame])
         characterVoices = d.object(forKey: "characterVoices") as? Bool ?? true
         sayNames = d.object(forKey: "sayNames") as? Bool ?? false
+        brodie = d.object(forKey: "brodie") as? Bool ?? false
         quietWhenGameTalks = d.object(forKey: "quietWhenGameTalks") as? Bool ?? true
         voiceSensitivity = d.object(forKey: "voiceSensitivity") as? Double ?? 0.5
         apiKey = Keychain.load()
@@ -315,7 +320,13 @@ final class Reader: ObservableObject {
         let profile = lastSpeaker.flatMap { cast.match($0, game: game) }
         var text = lastLine
         if sayNames, let who = lastSpeaker { text = "\(who): \(lastLine)" }
-        speaker.speak(text, style: style(for: profile))
+        if brodie, Bool.random() {
+            // Bubble Buddy chimes in first, in the narrator voice, then the line in its own voice.
+            let quip = ["Again, brodie!", "One more time, brodie!", "Okay brodie, here it is again!"].randomElement()!
+            speaker.speak(quip, style: style(for: nil), then: (text, style(for: profile)))
+        } else {
+            speaker.speak(text, style: style(for: profile))
+        }
     }
 
     /// Read whatever is in the box right now, even if it was already read.
@@ -330,7 +341,8 @@ final class Reader: ObservableObject {
     }
 
     func test(_ profile: CharacterProfile? = nil) {
-        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hi, I'm Bubble Buddy! I'll read the words on the screen for you."
+        let line = profile.map { "Hi, I'm \($0.name)!" } ?? (brodie ? "Hi, I'm Bubble Buddy! I'll read the words on the screen for you, brodie!"
+                                                          : "Hi, I'm Bubble Buddy! I'll read the words on the screen for you.")
         speaker.speak(line, style: style(for: profile))
     }
 

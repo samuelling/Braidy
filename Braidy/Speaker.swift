@@ -32,8 +32,24 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
         synth.delegate = self
     }
 
-    func speak(_ text: String, style: VoiceStyle) {
+    /// A line to say as soon as the current one finishes (e.g. Bubble Buddy's "Again, brodie!" then the line).
+    private var next: (text: String, style: VoiceStyle)?
+
+    func speak(_ text: String, style: VoiceStyle, then follow: (text: String, style: VoiceStyle)? = nil) {
         stop()
+        next = follow
+        start(text, style: style)
+    }
+
+    /// Say the queued line, if any. Returns false when nothing was waiting.
+    private func advance() -> Bool {
+        guard let n = next else { return false }
+        next = nil
+        start(n.text, style: n.style)
+        return true
+    }
+
+    private func start(_ text: String, style: VoiceStyle) {
         if let client = eleven, let voice = style.elevenVoiceID, !voice.isEmpty {
             // ElevenLabs says game names well on its own, so only clean the text (no respellings).
             let clean = Pronounce.prepare(text, extra: [:], respell: false)
@@ -71,7 +87,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        DispatchQueue.main.async { self.onSpeaking?(false) }
+        DispatchQueue.main.async { if !self.advance() { self.onSpeaking?(false) } }
     }
 
     private func speakApple(_ text: String, style: VoiceStyle) {
@@ -89,6 +105,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
     }
 
     func stop() {
+        next = nil
         fetch?.cancel()
         fetch = nil
         if let p = player {
@@ -104,7 +121,10 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
     }
 
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
-        DispatchQueue.main.async { self.onSpeaking?(self.synth.isSpeaking) }
+        DispatchQueue.main.async {
+            if self.synth.isSpeaking || self.advance() { return }
+            self.onSpeaking?(false)
+        }
     }
 
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) {

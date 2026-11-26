@@ -84,6 +84,9 @@ struct OptionsView: View {
             Toggle(isOn: $reader.sayNames) {
                 HStack { MenuIcon("tag.fill", Theme.yellow); Text("Say the character's name first") }
             }
+            Toggle(isOn: $reader.brodie) {
+                HStack { MenuIcon("face.smiling.inverse", Theme.cyan); Text("Bubble Buddy says \u{201C}brodie\u{201D}") }
+            }
             NavigationLink {
                 CastView(reader: reader, cast: cast)
             } label: {
