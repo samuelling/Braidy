@@ -21,7 +21,8 @@ struct ContentView: View {
                     .allowsHitTesting(false)
 
                 VStack(spacing: compact ? 10 : 14) {
-                    TopHUD(reader: reader, compact: compact) { showOptions = true }
+                    TopHUD(reader: reader, compact: compact, editing: editing,
+                           toggleBox: { editing.toggle(); Theme.tap() }) { showOptions = true }
                     Spacer(minLength: 0)
                     if editing {
                         EditBanner { editing = false; Theme.success() }
@@ -65,6 +66,8 @@ struct ContentView: View {
 struct TopHUD: View {
     @ObservedObject var reader: Reader
     var compact: Bool
+    var editing: Bool = false
+    var toggleBox: () -> Void = {}
     var openOptions: () -> Void
 
     var body: some View {
@@ -96,6 +99,15 @@ struct TopHUD: View {
                     .onTapGesture { reader.status = nil }
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            // The reading box is one tap away: no parent gate, since moving it is harmless.
+            Button(action: toggleBox) {
+                HUDChip(tint: editing ? Theme.yellow : Theme.panelEdge) {
+                    Image(systemName: editing ? "checkmark" : "viewfinder").foregroundStyle(Theme.yellow)
+                    if !compact { Text(editing ? "DONE" : "MOVE BOX").tracking(1) }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(editing ? "Done moving the reading box" : "Move the reading box")
             ParentGateButton(action: openOptions)
         }
         .animation(.spring(response: 0.35), value: reader.status)
