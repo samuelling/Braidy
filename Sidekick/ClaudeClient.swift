@@ -92,6 +92,35 @@ struct ClaudeClient {
 
     struct GameReply: Decodable { var game: String; var confidence: Double? }
 
+    struct GameMatch: Decodable, Hashable {
+        var title: String
+        var platform: String?
+        var year: String?
+        var about: String?
+
+        /// "Switch · 2022 · Open-world monster-catching adventure"
+        var detail: String {
+            [platform, year, about].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+    }
+
+    struct GameList: Decodable { var games: [GameMatch] }
+
+    /// Games matching what someone typed, best match first.
+    func searchGames(query: String) async throws -> [GameMatch] {
+        let prompt = """
+        Someone is choosing which video game their child is playing and typed "\(query)". It may be partial, \
+        misspelled, a nickname or a series name. Search the web as needed and list up to 8 video games that best \
+        match, most likely first, using each game's full official title. Prefer games on Nintendo Switch and \
+        Switch 2, then other consoles, and include recent releases.
+        For each give the main platform(s) as a short label (e.g. "Switch 2"), the release year, and what the game is \
+        in at most 8 words.
+        Reply with only JSON: {"games":[{"title":"","platform":"","year":"","about":""}]}
+        """
+        let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 2000)
+        return try Self.decode(GameList.self, from: text).games.filter { !$0.title.isEmpty }
+    }
+
     /// Which game is on the screen in this photo.
     func identifyGame(jpeg: Data) async throws -> GameReply {
         let content: [[String: Any]] = [

@@ -72,10 +72,22 @@ final class Reader: ObservableObject {
     @Published var game: String {
         didSet {
             defaults.set(game, forKey: "game")
+            if !game.isEmpty {
+                var recent = recentGames.filter { $0.caseInsensitiveCompare(game) != .orderedSame }
+                recent.insert(game, at: 0)
+                recentGames = Array(recent.prefix(12))
+                defaults.set(recentGames, forKey: "recentGames")
+            }
             if let r = Self.savedRegion(defaults, key: Self.regionKey(game)), r != region { region = r }
             updateCustomWords()
         }
     }
+    /// Platform · year · description for the current game, when Claude matched it.
+    @Published var gameDetail: String {
+        didSet { defaults.set(gameDetail, forKey: "gameDetail") }
+    }
+    /// Games picked before, most recent first.
+    @Published var recentGames: [String]
     @Published var characterVoices: Bool {
         didSet { defaults.set(characterVoices, forKey: "characterVoices") }
     }
@@ -117,6 +129,8 @@ final class Reader: ObservableObject {
         narratorVoice = d.string(forKey: "voice") ?? (vs.first?.identifier ?? "")
         zoom = d.object(forKey: "zoom") as? Double ?? 1
         game = savedGame
+        gameDetail = d.string(forKey: "gameDetail") ?? ""
+        recentGames = d.stringArray(forKey: "recentGames") ?? (savedGame.isEmpty ? [] : [savedGame])
         characterVoices = d.object(forKey: "characterVoices") as? Bool ?? true
         sayNames = d.object(forKey: "sayNames") as? Bool ?? false
         quietWhenGameTalks = d.object(forKey: "quietWhenGameTalks") as? Bool ?? true
@@ -337,6 +351,23 @@ final class Reader: ObservableObject {
         updateCustomWords()
     }
 
+    /// Official game titles matching what someone typed (partial, misspelled or a series name).
+    func searchGames(_ query: String) async throws -> [ClaudeClient.GameMatch] {
+        try await client.searchGames(query: query)
+    }
+
+    /// Set the game, confirm it on screen, and look up its characters if they aren't known yet.
+    func choose(game title: String, detail: String = "") {
+        game = title
+        gameDetail = detail
+        if hasKey && cast.cast(for: title).isEmpty {
+            lookUpCast()
+            status = "✓ Game set: \(title). Looking up its characters…"
+        } else {
+            status = "✓ Game set: \(title)"
+        }
+    }
+
     /// Ask Claude which game is on screen, then look up its cast.
     func identifyGame() {
         guard hasKey else { status = "Add a Claude API key first"; return }
@@ -355,7 +386,9 @@ final class Reader: ObservableObject {
                         self.lookingUp = false
                     } else {
                         self.game = reply.game
+                        self.gameDetail = ""
                         self.lookUpCast()
+                        self.status = "Claude thinks this is \(reply.game). Looking up its characters…"
                     }
                 } catch {
                     self?.status = error.localizedDescription

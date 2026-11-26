@@ -40,7 +40,7 @@ struct ContentView: View {
             StatusPill(camera: reader.camera, listener: reader.listener, listening: reader.listening,
                        hearing: reader.quietWhenGameTalks)
             if !reader.game.isEmpty {
-                Text(reader.game)
+                Label(reader.game, systemImage: "checkmark.seal.fill")
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
                     .padding(.horizontal, 12).padding(.vertical, 8)
