@@ -202,9 +202,10 @@ struct ClaudeClient {
 
 /// Minimal Keychain storage for the API key.
 enum Keychain {
-    private static let service = "com.samuelling.sidekick.claude"
+    static let claude = "com.samuelling.sidekick.claude"
+    static let elevenLabs = "com.samuelling.sidekick.elevenlabs"
 
-    static func load() -> String {
+    static func load(_ service: String = claude) -> String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                     kSecAttrService as String: service,
                                     kSecReturnData as String: true,
@@ -215,7 +216,7 @@ enum Keychain {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    static func save(_ key: String) {
+    static func save(_ key: String, service: String = claude) {
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                    kSecAttrService as String: service]
         SecItemDelete(base as CFDictionary)

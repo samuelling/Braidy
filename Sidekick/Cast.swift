@@ -21,6 +21,8 @@ struct CharacterProfile: Codable, Identifiable, Hashable {
     /// Speed multiplier, 0.6–1.5.
     var rate: Double = 1.0
     var voiceID: String = ""
+    /// ElevenLabs voice, when that engine is on.
+    var elevenVoiceID: String?
     /// True once someone picks this character's voice by hand, so Claude won't change it.
     var voiceLocked: Bool = false
     /// "claude", "seen" or "manual".

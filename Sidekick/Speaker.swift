@@ -9,11 +9,20 @@ struct VoiceStyle {
     var rate: Float = 1.0
     /// Word → respelling for this game's names and terms.
     var pronunciations: [String: String] = [:]
+    /// ElevenLabs voice to use when that engine is on.
+    var elevenVoiceID: String?
 }
 
 /// Text-to-speech with a few game-name pronunciation fixes.
-final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
+final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate, @unchecked Sendable {
     private let synth = AVSpeechSynthesizer()
+    /// Set when ElevenLabs is the voice engine and a key is saved; nil means Apple's voices.
+    var eleven: ElevenClient?
+    var elevenModel = "eleven_flash_v2_5"
+    /// Called when ElevenLabs fails and a line falls back to Apple's voice.
+    var onError: ((String) -> Void)?
+    private var player: AVAudioPlayer?
+    private var fetch: Task<Void, Never>?
     /// Base speed (AVSpeechUtterance rate, default system speed is 0.5).
     var baseRate: Float = 0.42
     var onSpeaking: ((Bool) -> Void)?
@@ -24,9 +33,50 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable 
     }
 
     func speak(_ text: String, style: VoiceStyle) {
+        stop()
+        if let client = eleven, let voice = style.elevenVoiceID, !voice.isEmpty {
+            // ElevenLabs says game names well on its own, so only clean the text (no respellings).
+            let clean = Pronounce.prepare(text, extra: [:], respell: false)
+            guard !clean.isEmpty else { return }
+            // ElevenLabs accepts speed 0.7–1.2; the user's base speed (0.42 ≈ normal) scales it too.
+            let speed = min(max((Double(baseRate) / 0.45) * (1 + (Double(style.rate) - 1) * 0.6), 0.7), 1.2)
+            let model = elevenModel
+            fetch = Task { [weak self] in
+                do {
+                    let data = try await AudioCache.shared.audio(text: clean, voiceID: voice, model: model, speed: speed) {
+                        try await client.speech(clean, voiceID: voice, model: model, speed: speed)
+                    }
+                    try Task.checkCancellation()
+                    await MainActor.run { self?.play(data) }
+                } catch is CancellationError {
+                } catch {
+                    if (error as? URLError)?.code == .cancelled { return }
+                    await MainActor.run {
+                        self?.onError?(error.localizedDescription)
+                        self?.speakApple(text, style: style)
+                    }
+                }
+            }
+            return
+        }
+        speakApple(text, style: style)
+    }
+
+    private func play(_ data: Data) {
+        guard let p = try? AVAudioPlayer(data: data) else { return }
+        p.delegate = self
+        player = p
+        p.play()
+        onSpeaking?(true)
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { self.onSpeaking?(false) }
+    }
+
+    private func speakApple(_ text: String, style: VoiceStyle) {
         let spoken = Pronounce.prepare(text, extra: style.pronunciations)
         guard !spoken.isEmpty else { return }
-        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         let u = AVSpeechUtterance(string: spoken)
         // Big pitch and speed shifts make the synthesizer sound robotic, so a character's settings are
         // compressed toward natural: pitch 0.5–2.0 maps to about 0.8–1.35, speed changes are softened.
@@ -39,7 +89,14 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable 
     }
 
     func stop() {
-        synth.stopSpeaking(at: .immediate)
+        fetch?.cancel()
+        fetch = nil
+        if let p = player {
+            p.stop()
+            player = nil
+            onSpeaking?(false)
+        }
+        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
     }
 
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didStart u: AVSpeechUtterance) {
@@ -101,9 +158,10 @@ enum Pronounce {
     private static let allowed = CharacterSet.letters.union(.decimalDigits).union(.whitespaces)
         .union(CharacterSet(charactersIn: ".,!?'’\"“”-—:;()…%&"))
 
-    static func prepare(_ text: String, extra: [String: String] = [:]) -> String {
+    static func prepare(_ text: String, extra: [String: String] = [:], respell: Bool = true) -> String {
         // Drop on-screen glyphs (▼, button icons misread as symbols).
         var s = String(String.UnicodeScalarView(text.unicodeScalars.map { allowed.contains($0) ? $0 : " " }))
+        guard respell else { return s.split(separator: " ").joined(separator: " ") }
         // Longest words first, so "Koroks" wins over "Korok".
         let gameFixes: [(NSRegularExpression, String)] = extra.sorted { $0.key.count > $1.key.count }.compactMap { word, say in
             let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"

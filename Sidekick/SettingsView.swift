@@ -14,6 +14,7 @@ struct SettingsView: View {
             Form {
                 gameSection
                 charactersSection
+                ElevenLabsSection(reader: reader)
                 voiceSection
                 GameVoiceSection(reader: reader, listener: reader.listener)
                 claudeSection
@@ -102,7 +103,7 @@ struct SettingsView: View {
     }
 
     private var voiceSection: some View {
-        Section("Voice") {
+        Section(reader.usingEleven ? "iPad voices (used if ElevenLabs is unavailable)" as String : "Voice") {
             Picker("Narrator voice", selection: $reader.narratorVoice) {
                 ForEach(reader.voices, id: \.identifier) { v in
                     Text(Speaker.label(v)).tag(v.identifier)
@@ -255,7 +256,15 @@ struct CharacterEditor: View {
                         LabeledContent("Also shown as", value: p.aliases.joined(separator: ", "))
                     }
                 }
-                Section("Voice") {
+                if reader.usingEleven && !reader.elevenVoices.isEmpty {
+                    Section("ElevenLabs voice") {
+                        Picker("Voice", selection: elevenBinding(p)) {
+                            ForEach(reader.elevenVoices) { v in Text(v.summary).tag(v.voice_id) }
+                        }
+                        Button("Test") { reader.test(profile ?? p) }
+                    }
+                }
+                Section(reader.usingEleven ? "iPad voice" as String : "Voice") {
                     Picker("Voice", selection: binding(\.voiceID, p, lock: true)) {
                         ForEach(reader.voices, id: \.identifier) { v in
                             Text(Speaker.label(v)).tag(v.identifier)
@@ -294,6 +303,18 @@ struct CharacterEditor: View {
         } else {
             Text("This character was removed.").foregroundStyle(.secondary)
         }
+    }
+
+    private func elevenBinding(_ p: CharacterProfile) -> Binding<String> {
+        Binding(
+            get: { (profile ?? p).elevenVoiceID ?? "" },
+            set: { value in
+                var q = profile ?? p
+                q.elevenVoiceID = value
+                q.voiceLocked = true
+                cast.upsert(q, game: reader.game)
+            }
+        )
     }
 
     private func binding<T>(_ path: WritableKeyPath<CharacterProfile, T>, _ p: CharacterProfile,
@@ -349,6 +370,75 @@ struct TrailingIconLabelStyle: LabelStyle {
         HStack(spacing: 6) {
             configuration.title
             configuration.icon.foregroundStyle(.green)
+        }
+    }
+}
+
+/// ElevenLabs: natural character voices with the user's own key; saved audio so lines are paid once.
+struct ElevenLabsSection: View {
+    @ObservedObject var reader: Reader
+    @State private var keyDraft = ""
+    @State private var cacheNote = ""
+
+    var body: some View {
+        Section {
+            Picker("Voices", selection: $reader.voiceEngine) {
+                Text("iPad (free)").tag("apple")
+                Text("ElevenLabs").tag("eleven")
+            }
+            .pickerStyle(.segmented)
+
+            if reader.voiceEngine == "eleven" {
+                SecureField("ElevenLabs API key (sk_…)", text: $keyDraft)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit { reader.elevenKey = keyDraft }
+                HStack {
+                    Button("Save key") { reader.elevenKey = keyDraft }
+                        .disabled(keyDraft == reader.elevenKey)
+                    Spacer()
+                    if reader.loadingElevenVoices {
+                        ProgressView()
+                    } else if reader.hasElevenKey && !reader.elevenVoices.isEmpty {
+                        Label("\(reader.elevenVoices.count) voices", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                    }
+                }
+                if reader.hasElevenKey {
+                    Picker("Quality", selection: $reader.elevenModel) {
+                        ForEach(ElevenClient.models, id: \.id) { m in Text(m.label).tag(m.id) }
+                    }
+                    if !reader.elevenVoices.isEmpty {
+                        Picker("Narrator", selection: $reader.elevenNarrator) {
+                            ForEach(reader.elevenVoices) { v in Text(v.summary).tag(v.voice_id) }
+                        }
+                        Button("Test the narrator") { reader.test() }
+                        Button("Re-pick every character's voice") { reader.castElevenVoices(force: true) }
+                    }
+                    Button("Reload voices from ElevenLabs") { reader.loadElevenVoices() }
+                    LabeledContent("Sent this month", value: "\(AudioCache.shared.charactersThisMonth.formatted()) characters")
+                    HStack {
+                        Button("Clear saved audio", role: .destructive) {
+                            AudioCache.shared.clear()
+                            cacheNote = "Cleared"
+                        }
+                        Spacer()
+                        Text(cacheNote).foregroundStyle(.secondary)
+                    }
+                }
+                Link("Get a key at elevenlabs.io", destination: URL(string: "https://elevenlabs.io/app/settings/api-keys")!)
+            }
+        } header: {
+            Text("Voice engine")
+        } footer: {
+            Text(reader.voiceEngine == "eleven"
+                 ? "ElevenLabs voices sound natural and each character gets one that fits their gender and age. Every line is saved on this iPad, so a line is only paid for once. If ElevenLabs can't be reached or the month's characters run out, Sidekick uses the iPad's voice."
+                 : "The iPad's own voices are free and work offline.")
+        }
+        .onAppear {
+            keyDraft = reader.elevenKey
+            let mb = Double(AudioCache.shared.bytesOnDisk) / 1_000_000
+            cacheNote = mb > 0.05 ? String(format: "%.1f MB saved", mb) : ""
         }
     }
 }

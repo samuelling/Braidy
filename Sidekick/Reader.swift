@@ -128,6 +128,31 @@ final class Reader: ObservableObject {
             defaults.set(voiceSensitivity, forKey: "voiceSensitivity")
         }
     }
+    // MARK: ElevenLabs
+
+    /// "apple" (free, on-device) or "eleven" (ElevenLabs, natural character voices).
+    @Published var voiceEngine: String {
+        didSet { defaults.set(voiceEngine, forKey: "voiceEngine"); configureEleven() }
+    }
+    @Published var elevenKey: String {
+        didSet {
+            Keychain.save(elevenKey.trimmingCharacters(in: .whitespacesAndNewlines), service: Keychain.elevenLabs)
+            configureEleven()
+            loadElevenVoices()
+        }
+    }
+    @Published var elevenModel: String {
+        didSet { defaults.set(elevenModel, forKey: "elevenModel"); speaker.elevenModel = elevenModel }
+    }
+    @Published var elevenNarrator: String {
+        didSet { defaults.set(elevenNarrator, forKey: "elevenNarrator") }
+    }
+    @Published private(set) var elevenVoices: [ElevenVoice] = []
+    @Published private(set) var loadingElevenVoices = false
+    var hasElevenKey: Bool { !elevenKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var usingEleven: Bool { voiceEngine == "eleven" && hasElevenKey }
+    private var lastElevenError = Date.distantPast
+
     @Published var apiKey: String {
         didSet { Keychain.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
@@ -157,10 +182,28 @@ final class Reader: ObservableObject {
         quietWhenGameTalks = d.object(forKey: "quietWhenGameTalks") as? Bool ?? true
         voiceSensitivity = d.object(forKey: "voiceSensitivity") as? Double ?? 0.5
         apiKey = Keychain.load()
+        voiceEngine = d.string(forKey: "voiceEngine") ?? "apple"
+        elevenKey = Keychain.load(Keychain.elevenLabs)
+        elevenModel = d.string(forKey: "elevenModel") ?? ElevenClient.models[0].id
+        elevenNarrator = d.string(forKey: "elevenNarrator") ?? ""
+        if let data = d.data(forKey: "elevenVoices"),
+           let saved = try? JSONDecoder().decode([ElevenVoice].self, from: data) {
+            elevenVoices = saved
+        }
 
         camera.setRegion(region)
         camera.zoom = CGFloat(zoom)
         speaker.baseRate = Float(rate)
+        speaker.elevenModel = elevenModel
+        speaker.onError = { [weak self] msg in
+            guard let self else { return }
+            // Don't flood the screen if every line fails (e.g. out of characters).
+            if Date().timeIntervalSince(self.lastElevenError) > 20 {
+                self.status = msg + " Using the iPad's voice for now."
+                self.lastElevenError = Date()
+            }
+        }
+        configureEleven()
         listener.threshold = voiceSensitivity
         speaker.onSpeaking = { [weak self] s in
             self?.isSpeaking = s
@@ -183,6 +226,7 @@ final class Reader: ObservableObject {
     func start() {
         camera.start()
         applyListening()
+        if hasElevenKey && elevenVoices.isEmpty { loadElevenVoices() }
     }
 
     /// Playback-only when not listening; play-and-record (still out of the speaker, mixing with
@@ -291,11 +335,60 @@ final class Reader: ObservableObject {
     }
 
     func style(for p: CharacterProfile?) -> VoiceStyle {
-        guard characterVoices, let p else {
-            return VoiceStyle(voiceID: narratorVoice, pronunciations: pronunciations)
+        guard characterVoices, var p else {
+            return VoiceStyle(voiceID: narratorVoice, pronunciations: pronunciations,
+                              elevenVoiceID: elevenNarrator)
+        }
+        // Give a character an ElevenLabs voice the first time they speak with that engine on.
+        if usingEleven, (p.elevenVoiceID ?? "").isEmpty,
+           let v = ElevenCasting.pick(for: p, voices: elevenVoices, narrator: elevenNarrator) {
+            p.elevenVoiceID = v
+            cast.upsert(p, game: game)
         }
         return VoiceStyle(voiceID: p.voiceID.isEmpty ? narratorVoice : p.voiceID,
-                          pitch: Float(p.pitch), rate: Float(p.rate), pronunciations: pronunciations)
+                          pitch: Float(p.pitch), rate: Float(p.rate), pronunciations: pronunciations,
+                          elevenVoiceID: p.elevenVoiceID ?? elevenNarrator)
+    }
+
+    // MARK: ElevenLabs
+
+    private func configureEleven() {
+        speaker.eleven = usingEleven
+            ? ElevenClient(apiKey: elevenKey.trimmingCharacters(in: .whitespacesAndNewlines)) : nil
+    }
+
+    /// Fetch the account's voices, pick a narrator, and give the cast voices.
+    func loadElevenVoices() {
+        guard hasElevenKey, !loadingElevenVoices else { return }
+        loadingElevenVoices = true
+        let client = ElevenClient(apiKey: elevenKey.trimmingCharacters(in: .whitespacesAndNewlines))
+        Task { @MainActor [weak self] in
+            do {
+                let voices = try await client.voices()
+                guard let self else { return }
+                self.elevenVoices = voices
+                if let data = try? JSONEncoder().encode(voices) { self.defaults.set(data, forKey: "elevenVoices") }
+                if self.elevenNarrator.isEmpty || !voices.contains(where: { $0.voice_id == self.elevenNarrator }) {
+                    self.elevenNarrator = ElevenCasting.narrator(from: voices) ?? ""
+                }
+                self.castElevenVoices(force: false)
+                self.status = "ElevenLabs connected: \(voices.count) voices"
+            } catch {
+                self?.status = error.localizedDescription
+            }
+            self?.loadingElevenVoices = false
+        }
+    }
+
+    /// Give every character an ElevenLabs voice (all of them with force, else only those without one).
+    func castElevenVoices(force: Bool) {
+        guard !elevenVoices.isEmpty else { return }
+        for var p in cast.cast(for: game) {
+            if !force && !(p.elevenVoiceID ?? "").isEmpty { continue }
+            if p.voiceLocked && !(p.elevenVoiceID ?? "").isEmpty { continue }
+            p.elevenVoiceID = ElevenCasting.pick(for: p, voices: elevenVoices, narrator: elevenNarrator)
+            cast.upsert(p, game: game)
+        }
     }
 
     // MARK: Cast
@@ -369,6 +462,9 @@ final class Reader: ObservableObject {
             if let pitch = e.pitch { p.pitch = min(max(pitch, 0.5), 2.0) } else { VoiceCasting.defaultStyle(&p) }
             if let rate = e.rate { p.rate = min(max(rate, 0.6), 1.5) }
             p.voiceID = VoiceCasting.pick(for: p, voices: voices, narrator: narratorVoice)
+            if !elevenVoices.isEmpty {
+                p.elevenVoiceID = ElevenCasting.pick(for: p, voices: elevenVoices, narrator: elevenNarrator)
+            }
         }
         p.source = "claude"
         cast.upsert(p, game: game)
