@@ -9,6 +9,7 @@ final class Reader: ObservableObject {
     private let speaker = Speaker()
     private var tracker = DialogueTracker()
     private let defaults = UserDefaults.standard
+    private let audioQueue = DispatchQueue(label: "navi.audio-session")
 
     static let defaultRegion = CGRect(x: 0.06, y: 0.55, width: 0.88, height: 0.4)
     static let suggestedGames = [
@@ -133,16 +134,22 @@ final class Reader: ObservableObject {
     /// Playback-only when not listening; play-and-record (still out of the speaker, mixing with
     /// other audio) when listening for the game's voice. Speech plays even with the silent switch on.
     private func applyListening() {
-        let session = AVAudioSession.sharedInstance()
         listener.stop()
-        if quietWhenGameTalks {
-            try? session.setCategory(.playAndRecord, mode: .default,
-                                     options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothA2DP])
+        let listen = quietWhenGameTalks
+        // Activating the audio session can block, so keep it off the main thread.
+        audioQueue.async { [weak self] in
+            let session = AVAudioSession.sharedInstance()
+            if listen {
+                try? session.setCategory(.playAndRecord, mode: .default,
+                                         options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothA2DP])
+            } else {
+                try? session.setCategory(.playback, mode: .spokenAudio, options: [])
+            }
             try? session.setActive(true)
-            listener.start()
-        } else {
-            try? session.setCategory(.playback, mode: .spokenAudio, options: [])
-            try? session.setActive(true)
+            DispatchQueue.main.async {
+                guard let self, self.quietWhenGameTalks == listen, listen else { return }
+                self.listener.start()
+            }
         }
     }
 

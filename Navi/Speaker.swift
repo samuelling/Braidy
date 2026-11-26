@@ -10,7 +10,7 @@ struct VoiceStyle {
 }
 
 /// Text-to-speech with a few game-name pronunciation fixes.
-final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
+final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     private let synth = AVSpeechSynthesizer()
     /// Base speed (AVSpeechUtterance rate, default system speed is 0.5).
     var baseRate: Float = 0.42
