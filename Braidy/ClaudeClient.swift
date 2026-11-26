@@ -3,7 +3,7 @@ import Security
 
 /// Calls the Claude API with the user's own API key (stored in the Keychain).
 ///
-/// Claude.ai subscriptions can't sign in to third-party apps, so each person who uses Sidekick's
+/// Claude.ai subscriptions can't sign in to third-party apps, so each person who uses Braidy's
 /// character lookups pastes an API key from platform.claude.com, billed per use.
 struct ClaudeClient {
     let apiKey: String
@@ -17,6 +17,20 @@ struct ClaudeClient {
             case .api(let code, let msg): return "Claude API error \(code): \(msg)"
             case .noJSON: return "Claude's answer didn't include the expected data."
             }
+        }
+    }
+
+    /// Free check that the key works (lists models; no tokens used).
+    func validate() async throws {
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/models?limit=1")!)
+        req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200 else {
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let msg = (json?["error"] as? [String: Any])?["message"] as? String ?? "Request failed"
+            throw Failure.api(code, msg)
         }
     }
 
@@ -202,8 +216,8 @@ struct ClaudeClient {
 
 /// Minimal Keychain storage for the API key.
 enum Keychain {
-    static let claude = "com.samuelling.sidekick.claude"
-    static let elevenLabs = "com.samuelling.sidekick.elevenlabs"
+    static let claude = "com.samuelling.braidy.claude"
+    static let elevenLabs = "com.samuelling.braidy.elevenlabs"
 
     static func load(_ service: String = claude) -> String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,

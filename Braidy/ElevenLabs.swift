@@ -43,6 +43,14 @@ struct ElevenClient {
         var next_page_token: String?
     }
 
+    /// Free check that the key works and can read voices.
+    func validate() async throws {
+        var req = URLRequest(url: URL(string: "https://api.elevenlabs.io/v2/voices?page_size=1&include_total_count=false")!)
+        req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+    }
+
     /// All voices the account can use, defaults included.
     func voices() async throws -> [ElevenVoice] {
         var all: [ElevenVoice] = []

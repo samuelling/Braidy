@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct SidekickApp: App {
+struct BraidyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

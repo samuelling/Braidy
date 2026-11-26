@@ -9,7 +9,7 @@ final class Reader: ObservableObject {
     private let speaker = Speaker()
     private var tracker = DialogueTracker()
     private let defaults = UserDefaults.standard
-    private let audioQueue = DispatchQueue(label: "sidekick.audio-session")
+    private let audioQueue = DispatchQueue(label: "braidy.audio-session")
 
     static let defaultRegion = CGRect(x: 0.06, y: 0.55, width: 0.88, height: 0.4)
     static let suggestedGames = [
@@ -55,7 +55,7 @@ final class Reader: ObservableObject {
 
     @Published var lastLine = ""
     @Published var lastSpeaker: String?
-    /// The last line was voiced by the game itself, so Sidekick stayed quiet.
+    /// The last line was voiced by the game itself, so Braidy stayed quiet.
     @Published var lastLineWasVoiced = false
     @Published var isSpeaking = false
     @Published var status: String?
@@ -270,7 +270,7 @@ final class Reader: ObservableObject {
     /// Speak a settled line, unless the game is voicing it.
     ///
     /// Subtitles and the actor's voice start together, but the sound classifier needs a moment to
-    /// be sure it hears speech. So a settled line waits ~0.7 s, then Sidekick checks whether the game
+    /// be sure it hears speech. So a settled line waits ~0.7 s, then Braidy checks whether the game
     /// spoke from 1.5 s before the line settled until now. If it did, the line is shown but not read.
     private func deliver(_ line: String, from name: String?) {
         pendingLine?.cancel()
@@ -330,7 +330,7 @@ final class Reader: ObservableObject {
     }
 
     func test(_ profile: CharacterProfile? = nil) {
-        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hi! I'm your sidekick. I'll read the words on the screen for you."
+        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hi, I'm Braidy! I'll read the words on the screen for you."
         speaker.speak(line, style: style(for: profile))
     }
 

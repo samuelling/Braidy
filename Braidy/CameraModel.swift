@@ -23,7 +23,7 @@ final class CameraModel: NSObject, ObservableObject {
         didSet { let words = customWords; videoQueue.async { self.request.customWords = words } }
     }
 
-    private let videoQueue = DispatchQueue(label: "sidekick.video")
+    private let videoQueue = DispatchQueue(label: "braidy.video")
     private let output = AVCaptureVideoDataOutput()
     private var device: AVCaptureDevice?
     private weak var previewLayer: AVCaptureVideoPreviewLayer?

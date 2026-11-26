@@ -1,13 +1,14 @@
 import AVFoundation
 import SwiftUI
 
-struct SettingsView: View {
+/// Options: the grown-ups' menu (opened by press-and-hold on the gear).
+struct OptionsView: View {
     @ObservedObject var reader: Reader
     @ObservedObject var camera: CameraModel
     @ObservedObject var cast: CastStore
     @Binding var editing: Bool
+    var replayTutorial: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var keyDraft = ""
 
     var body: some View {
         NavigationStack {
@@ -17,21 +18,21 @@ struct SettingsView: View {
                 ElevenLabsSection(reader: reader)
                 voiceSection
                 GameVoiceSection(reader: reader, listener: reader.listener)
-                claudeSection
                 cameraSection
-                Section("Tips") {
-                    Text("Prop the iPad up so the whole TV or Switch screen is in view, then make the reading box cover just the dialogue area so the map and menus aren't read out.")
-                    Text("Better voices: on the iPad, open Settings › Accessibility › Spoken Content › Voices › English and download a few Enhanced or Premium voices. They show up here after you reopen Sidekick.")
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                extrasSection
+                helpSection
             }
-            .navigationTitle("Sidekick")
+            .arcadeForm()
+            .navigationTitle("Options")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.font(Theme.body(17, .heavy))
+                }
             }
-            .onAppear { keyDraft = reader.apiKey }
         }
+        .fontDesign(.rounded)
+        .preferredColorScheme(.dark)
+        .tint(Theme.cyan)
     }
 
     // MARK: Sections
@@ -42,6 +43,7 @@ struct SettingsView: View {
                 PlatformPickerView(reader: reader)
             } label: {
                 HStack(alignment: .top) {
+                    MenuIcon("gamecontroller.fill", Theme.green)
                     Text("Game")
                     Spacer()
                     if reader.game.isEmpty {
@@ -59,51 +61,62 @@ struct SettingsView: View {
                     }
                 }
             }
-            Button {
-                reader.identifyGame()
-            } label: {
-                Label("Ask Claude which game is on screen", systemImage: "sparkles")
+            if reader.hasKey {
+                Button {
+                    reader.identifyGame()
+                } label: {
+                    Label("Ask Claude which game is on screen", systemImage: "sparkles")
+                }
+                .disabled(reader.lookingUp)
             }
-            .disabled(!reader.hasKey || reader.lookingUp)
         } header: {
-            Text("Game")
+            ArcadeHeader("Now playing")
         } footer: {
-            Text("Knowing the game lets Claude look up its characters and words, and Sidekick remembers the reading box for each game.")
+            Text("Braidy remembers the reading box for each game.")
         }
     }
 
     private var charactersSection: some View {
         Section {
-            Toggle("A different voice for each character", isOn: $reader.characterVoices)
-            Toggle("Say the character's name first", isOn: $reader.sayNames)
+            Toggle(isOn: $reader.characterVoices) {
+                HStack { MenuIcon("person.2.wave.2.fill", Theme.pink); Text("A different voice for each character") }
+            }
+            Toggle(isOn: $reader.sayNames) {
+                HStack { MenuIcon("tag.fill", Theme.yellow); Text("Say the character's name first") }
+            }
             NavigationLink {
                 CastView(reader: reader, cast: cast)
             } label: {
                 HStack {
+                    MenuIcon("theatermasks.fill", Theme.violet)
                     Text("Characters")
                     Spacer()
                     Text("\(cast.cast(for: reader.game).count)").foregroundStyle(.secondary)
                 }
             }
             .disabled(reader.game.isEmpty)
-            Button {
-                reader.lookUpCast()
-            } label: {
-                HStack {
-                    Label("Look up characters with Claude", systemImage: "person.3.fill")
-                    if reader.lookingUp { Spacer(); ProgressView() }
+            if reader.hasKey {
+                Button {
+                    reader.lookUpCast()
+                } label: {
+                    HStack {
+                        Label("Look up characters with Claude", systemImage: "sparkles")
+                        if reader.lookingUp { Spacer(); ProgressView() }
+                    }
                 }
+                .disabled(reader.game.isEmpty || reader.lookingUp)
             }
-            .disabled(!reader.hasKey || reader.game.isEmpty || reader.lookingUp)
         } header: {
-            Text("Characters")
+            ArcadeHeader("Characters")
         } footer: {
-            Text("Sidekick reads the speaker's name above the dialogue. Characters it hasn't met yet get looked up automatically when a Claude key is set; you can change any voice by hand.")
+            Text(reader.hasKey
+                 ? "When a new name shows up above the words, Claude looks up who it is and picks a voice that fits. You can change any voice by hand."
+                 : "Braidy notices the name above the words and gives each character their own voice. Add Claude in Extras to match voices to who they are.")
         }
     }
 
     private var voiceSection: some View {
-        Section(reader.usingEleven ? "iPad voices (used if ElevenLabs is unavailable)" as String : "Voice") {
+        Section {
             Picker("Narrator voice", selection: $reader.narratorVoice) {
                 ForEach(reader.voices, id: \.identifier) { v in
                     Text(Speaker.label(v)).tag(v.identifier)
@@ -119,56 +132,122 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("Voices sound robotic?", systemImage: "waveform.badge.exclamationmark")
                         .font(.headline)
-                    Text("This iPad has \(reader.goodVoiceCount) natural-sounding English voice\(reader.goodVoiceCount == 1 ? "" : "s"). Download a few free Enhanced or Premium ones: iPad Settings › Accessibility › Spoken Content (or Read & Speak) › Voices › English. Ava, Zoe, Evan and Nathan (Premium) sound great. Then come back and tap Use the best voices.")
+                    Text("This device has \(reader.goodVoiceCount) natural-sounding English voice\(reader.goodVoiceCount == 1 ? "" : "s"). Download a few free Enhanced or Premium ones: Settings › Accessibility › Spoken Content (or Read & Speak) › Voices › English. Ava, Zoe, Evan and Nathan (Premium) sound great. Then come back and tap Use the best voices.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
             }
             Button("Use the best voices") { reader.useBestVoices() }
-        }
-    }
-
-    private var claudeSection: some View {
-        Section {
-            SecureField("Claude API key (sk-ant-…)", text: $keyDraft)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .onSubmit { reader.apiKey = keyDraft }
-            HStack {
-                Button("Save key") { reader.apiKey = keyDraft }
-                    .disabled(keyDraft == reader.apiKey)
-                Spacer()
-                if reader.hasKey {
-                    Label("Key saved", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
-                }
-            }
-            if reader.hasKey {
-                Button("Remove key", role: .destructive) { keyDraft = ""; reader.apiKey = "" }
-            }
-            Link("Get an API key at platform.claude.com",
-                 destination: URL(string: "https://platform.claude.com/settings/keys")!)
         } header: {
-            Text("Claude")
-        } footer: {
-            Text("Only character lookups use Claude; reading the screen and speaking happen on this iPad. Claude.ai subscriptions can't sign in to other apps, so this uses an API key, billed per use (a cast lookup is a few cents). The key stays in this iPad's Keychain.")
+            ArcadeHeader(reader.usingEleven ? "Device voices (backup)" : "Voice")
         }
     }
 
     private var cameraSection: some View {
         Section {
             HStack {
+                MenuIcon("plus.magnifyingglass", Theme.cyan)
                 Text("Zoom")
                 Slider(value: $reader.zoom, in: 1...max(1.01, Double(camera.maxZoom)))
                 Text(String(format: "%.1f×", reader.zoom)).monospacedDigit().foregroundStyle(.secondary)
             }
-            Button("Move the reading box") { editing = true; dismiss() }
+            Button { editing = true; dismiss() } label: {
+                HStack { MenuIcon("rectangle.dashed", Theme.yellow); Text("Move the reading box") }
+            }
             Button("Reset the reading box") { reader.region = Reader.defaultRegion }
         } header: {
-            Text("Camera")
+            ArcadeHeader("Reading box & camera")
         } footer: {
-            Text("Zoom in if the iPad sits far from the TV.")
+            Text("Zoom in if the device sits far from the TV.")
         }
+    }
+
+    private var extrasSection: some View {
+        Section {
+            NavigationLink {
+                ExtrasSetupView(reader: reader)
+            } label: {
+                HStack {
+                    MenuIcon("wand.and.stars", Theme.pink)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Extras")
+                        Text("Smarter characters (Claude) · Movie-quality voices (ElevenLabs)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    ExtraBadge(on: reader.hasKey, label: "Claude")
+                    ExtraBadge(on: reader.hasElevenKey, label: "11")
+                }
+            }
+        } header: {
+            ArcadeHeader("Optional extras")
+        } footer: {
+            Text("Braidy works fully without these. They're optional add-ons you connect with your own accounts.")
+        }
+    }
+
+    private var helpSection: some View {
+        Section {
+            NavigationLink { HowItWorksView() } label: {
+                HStack { MenuIcon("lightbulb.fill", Theme.yellow); Text("How Braidy works") }
+            }
+            NavigationLink { PrivacyView() } label: {
+                HStack { MenuIcon("lock.shield.fill", Theme.green); Text("Privacy") }
+            }
+            Button {
+                dismiss()
+                replayTutorial()
+            } label: {
+                HStack { MenuIcon("play.rectangle.fill", Theme.cyan); Text("Replay the setup tutorial") }
+            }
+        } header: {
+            ArcadeHeader("Help")
+        }
+    }
+}
+
+/// A rounded colored icon tile for menu rows.
+struct MenuIcon: View {
+    let name: String
+    let color: Color
+    init(_ name: String, _ color: Color) { self.name = name; self.color = color }
+
+    var body: some View {
+        Image(systemName: name)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(Theme.night)
+            .frame(width: 28, height: 28)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(color.gradient))
+    }
+}
+
+struct ArcadeHeader: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text.uppercased()).font(Theme.title(13)).tracking(1.5).foregroundStyle(Theme.yellow)
+    }
+}
+
+struct ExtraBadge: View {
+    let on: Bool
+    let label: String
+    var body: some View {
+        Text(label)
+            .font(Theme.body(11, .heavy))
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(on ? Theme.green : Color.gray.opacity(0.35)))
+            .foregroundStyle(on ? Theme.night : .white.opacity(0.7))
+    }
+}
+
+extension View {
+    /// Night-sky background and translucent rows for Forms and Lists.
+    func arcadeForm() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(ArcadeBackground())
     }
 }
 
@@ -182,7 +261,7 @@ struct CastView: View {
         List {
             Section {
                 if people.isEmpty {
-                    Text("No characters yet. They're added as Sidekick sees their names, or look them all up with Claude.")
+                    Text("No characters yet. They're added as Braidy sees their names, or look them all up with Claude.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(people) { p in
@@ -216,6 +295,7 @@ struct CastView: View {
                 }
             }
         }
+        .arcadeForm()
         .navigationTitle("Characters")
         .toolbar {
             Button {
@@ -299,6 +379,7 @@ struct CharacterEditor: View {
                     Text(p.voiceLocked ? "You've set this voice by hand, so Claude's lookups won't change it unless you ask again here." : "")
                 }
             }
+            .arcadeForm()
             .navigationTitle(p.name)
         } else {
             Text("This character was removed.").foregroundStyle(.secondary)
@@ -341,7 +422,7 @@ struct GameVoiceSection: View {
             Toggle("Stay quiet when the game is talking", isOn: $reader.quietWhenGameTalks)
             if reader.quietWhenGameTalks {
                 if listener.available == false {
-                    Label("Sidekick can't use the microphone. Allow it in the iPad's Settings › Sidekick.",
+                    Label("Braidy can't use the microphone. Allow it in the iPad's Settings › Braidy.",
                           systemImage: "mic.slash.fill")
                         .foregroundStyle(.orange)
                 } else {
@@ -359,7 +440,7 @@ struct GameVoiceSection: View {
         } header: {
             Text("Voiced cutscenes")
         } footer: {
-            Text("Sidekick listens for voice acting (on this iPad, nothing is recorded or sent). When a subtitle appears while the game is speaking, Sidekick shows it but doesn't read it; tap the repeat button to hear it anyway. Short grunts and \"Hmm!\" sounds don't count. People talking in the room can also make Sidekick stay quiet, so raise the setting if it skips lines it should read.")
+            Text("Braidy listens for voice acting (on this iPad, nothing is recorded or sent). When a subtitle appears while the game is speaking, Braidy shows it but doesn't read it; tap the repeat button to hear it anyway. Short grunts and \"Hmm!\" sounds don't count. People talking in the room can also make Braidy stay quiet, so raise the setting if it skips lines it should read.")
         }
     }
 }
@@ -374,37 +455,38 @@ struct TrailingIconLabelStyle: LabelStyle {
     }
 }
 
-/// ElevenLabs: natural character voices with the user's own key; saved audio so lines are paid once.
+/// Which voices Braidy speaks with. The ElevenLabs key itself is set up in Extras.
 struct ElevenLabsSection: View {
     @ObservedObject var reader: Reader
-    @State private var keyDraft = ""
     @State private var cacheNote = ""
 
     var body: some View {
         Section {
             Picker("Voices", selection: $reader.voiceEngine) {
-                Text("iPad (free)").tag("apple")
+                Text("Device (free)").tag("apple")
                 Text("ElevenLabs").tag("eleven")
             }
             .pickerStyle(.segmented)
 
             if reader.voiceEngine == "eleven" {
-                SecureField("ElevenLabs API key (sk_…)", text: $keyDraft)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onSubmit { reader.elevenKey = keyDraft }
-                HStack {
-                    Button("Save key") { reader.elevenKey = keyDraft }
-                        .disabled(keyDraft == reader.elevenKey)
-                    Spacer()
-                    if reader.loadingElevenVoices {
-                        ProgressView()
-                    } else if reader.hasElevenKey && !reader.elevenVoices.isEmpty {
-                        Label("\(reader.elevenVoices.count) voices", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(.green)
+                if !reader.hasElevenKey {
+                    NavigationLink {
+                        ExtrasSetupView(reader: reader)
+                    } label: {
+                        Label("Connect ElevenLabs to use these voices", systemImage: "link")
+                            .foregroundStyle(Theme.yellow)
                     }
-                }
-                if reader.hasElevenKey {
+                } else {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        if reader.loadingElevenVoices {
+                            ProgressView()
+                        } else if !reader.elevenVoices.isEmpty {
+                            Label("\(reader.elevenVoices.count) voices ready", systemImage: "checkmark.seal.fill")
+                                .foregroundStyle(Theme.green)
+                        }
+                    }
                     Picker("Quality", selection: $reader.elevenModel) {
                         ForEach(ElevenClient.models, id: \.id) { m in Text(m.label).tag(m.id) }
                     }
@@ -415,8 +497,7 @@ struct ElevenLabsSection: View {
                         Button("Test the narrator") { reader.test() }
                         Button("Re-pick every character's voice") { reader.castElevenVoices(force: true) }
                     }
-                    Button("Reload voices from ElevenLabs") { reader.loadElevenVoices() }
-                    LabeledContent("Sent this month", value: "\(AudioCache.shared.charactersThisMonth.formatted()) characters")
+                    LabeledContent("Used this month", value: "\(AudioCache.shared.charactersThisMonth.formatted()) characters")
                     HStack {
                         Button("Clear saved audio", role: .destructive) {
                             AudioCache.shared.clear()
@@ -426,17 +507,15 @@ struct ElevenLabsSection: View {
                         Text(cacheNote).foregroundStyle(.secondary)
                     }
                 }
-                Link("Get a key at elevenlabs.io", destination: URL(string: "https://elevenlabs.io/app/settings/api-keys")!)
             }
         } header: {
-            Text("Voice engine")
+            ArcadeHeader("Voices")
         } footer: {
             Text(reader.voiceEngine == "eleven"
-                 ? "ElevenLabs voices sound natural and each character gets one that fits their gender and age. Every line is saved on this iPad, so a line is only paid for once. If ElevenLabs can't be reached or the month's characters run out, Sidekick uses the iPad's voice."
-                 : "The iPad's own voices are free and work offline.")
+                 ? "Each character gets a natural voice that fits them. Every line is saved on this device, so it's only paid for once. If ElevenLabs can't be reached, Braidy uses the device's own voice."
+                 : "The device's own voices are free and work offline.")
         }
         .onAppear {
-            keyDraft = reader.elevenKey
             let mb = Double(AudioCache.shared.bytesOnDisk) / 1_000_000
             cacheNote = mb > 0.05 ? String(format: "%.1f MB saved", mb) : ""
         }

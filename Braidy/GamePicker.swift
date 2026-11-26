@@ -35,6 +35,7 @@ struct PlatformPickerView: View {
                 }
             }
         }
+        .arcadeForm()
         .navigationTitle("Choose a game")
         .onAppear { startingGame = reader.game }
         // Once a game is picked (here or in a search below), pop back to Settings.
@@ -130,6 +131,7 @@ struct GameSearchView: View {
                     prompt: short.isEmpty ? "Type any game" : "Search \(short) games")
         .onSubmit(of: .search) { if reader.hasKey { search() } }
         .onChange(of: query) { _, _ in results = []; note = nil }
+        .arcadeForm()
         .navigationTitle(platform)
         .task { await loadPopular() }
     }
