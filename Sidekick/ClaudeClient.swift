@@ -3,7 +3,7 @@ import Security
 
 /// Calls the Claude API with the user's own API key (stored in the Keychain).
 ///
-/// Claude.ai subscriptions can't sign in to third-party apps, so each person who uses Navi's
+/// Claude.ai subscriptions can't sign in to third-party apps, so each person who uses Sidekick's
 /// character lookups pastes an API key from platform.claude.com, billed per use.
 struct ClaudeClient {
     let apiKey: String
@@ -24,6 +24,12 @@ struct ClaudeClient {
 
     struct CastReply: Decodable {
         var characters: [Entry]
+        var terms: [Term]?
+    }
+
+    struct Term: Decodable {
+        var word: String
+        var say: String?
     }
 
     struct Entry: Decodable {
@@ -33,6 +39,7 @@ struct ClaudeClient {
         var species: String?
         var age: String?
         var about: String?
+        var say: String?
         var pitch: Double?
         var rate: Double?
     }
@@ -43,21 +50,29 @@ struct ClaudeClient {
     iOS text-to-speech voice that suit their species, size, age and personality: pitch from 0.5 (very deep, \
     e.g. a huge rock creature) through 1.0 (typical) to 2.0 (very high, e.g. a tiny sprite), and rate from \
     0.7 (slow, ponderous) to 1.3 (quick, excitable). Keep most characters between 0.8 and 1.3 pitch.
+    Also give "say": the name respelled with hyphenated English syllables so a standard text-to-speech voice \
+    pronounces it correctly (e.g. "Pikachu" → "Pee-kah-choo"), only when the voice would likely get it wrong; \
+    otherwise leave "say" out.
     """
 
     /// The game's main speaking characters, researched with web search.
-    func lookUpCast(game: String) async throws -> [Entry] {
+    func lookUpCast(game: String) async throws -> CastReply {
         let prompt = """
         I'm building a reader that speaks a video game's dialogue aloud for a young child, using a different \
         voice per character. Search the web as needed and list the main speaking characters in the video game \
         "\(game)" (up to 40), including the names exactly as they appear in dialogue boxes and any alternate \
-        names shown in game (aliases).
+        names shown in game (aliases). If the game's text is mostly narration or menus with few named speakers \
+        (e.g. battle messages), list the characters that do speak.
         \(Self.voiceGuide)
+        Also list up to 80 of the game's own words a child will meet in its text (places, items, creatures, \
+        moves, abilities, made-up words), each with "say" in the same way, only when a standard voice would \
+        mispronounce it.
         Reply with only JSON in this shape, no other text:
-        {"characters":[{"name":"","aliases":[],"gender":"","species":"","age":"","about":"","pitch":1.0,"rate":1.0}]}
+        {"characters":[{"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0}],
+         "terms":[{"word":"","say":""}]}
         """
-        let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 8000)
-        return try Self.decode(CastReply.self, from: text).characters
+        let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 12000)
+        return try Self.decode(CastReply.self, from: text)
     }
 
     /// One character whose name appeared in a dialogue box.
@@ -68,7 +83,7 @@ struct ClaudeClient {
         them, make a best guess from the name and the game.
         \(Self.voiceGuide)
         Reply with only JSON, no other text:
-        {"name":"","aliases":[],"gender":"","species":"","age":"","about":"","pitch":1.0,"rate":1.0}
+        {"name":"","aliases":[],"gender":"","species":"","age":"","about":"","say":"","pitch":1.0,"rate":1.0}
         Use the character's correctly spelled name for "name".
         """
         let text = try await send([["type": "text", "text": prompt]], webSearch: true, maxTokens: 2000)
@@ -136,7 +151,7 @@ struct ClaudeClient {
 
 /// Minimal Keychain storage for the API key.
 enum Keychain {
-    private static let service = "com.samuelling.navi.claude"
+    private static let service = "com.samuelling.sidekick.claude"
 
     static func load() -> String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,

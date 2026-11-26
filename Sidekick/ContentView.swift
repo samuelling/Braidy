@@ -175,7 +175,7 @@ struct PermissionOverlay: View {
         if camera.authorized == false {
             VStack(spacing: 16) {
                 Image(systemName: "camera.fill").font(.system(size: 48))
-                Text("Navi needs the camera to see the game's words.")
+                Text("Sidekick needs the camera to see the game's words.")
                     .font(.title3.weight(.semibold))
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }

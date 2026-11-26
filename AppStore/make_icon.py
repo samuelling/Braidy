@@ -1,4 +1,4 @@
-"""Navi's app icon: a glowing speech bubble with sound waves on a night-blue field."""
+"""Sidekick's app icon: a glowing speech bubble with sound waves on a night-blue field."""
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -52,5 +52,5 @@ spm = np.asarray(sp.filter(ImageFilter.GaussianBlur(3)), np.float32) / 255
 img = img * (1 - spm[..., None]) + np.array([255, 246, 200], np.float32) * spm[..., None]
 
 out = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), "RGB").resize((1024, 1024), Image.LANCZOS)
-out.save("Navi/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+out.save("Sidekick/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
 print("ok")

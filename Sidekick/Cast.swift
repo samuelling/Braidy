@@ -8,6 +8,8 @@ struct CharacterProfile: Codable, Identifiable, Hashable {
     var key: String
     var name: String
     var aliases: [String] = []
+    /// How to spell the name so the speech voice says it right (e.g. "Pee-kah-choo"), if needed.
+    var say: String?
     /// "male", "female", "neutral" or "unknown".
     var gender: String = "unknown"
     var species: String = ""
@@ -42,18 +44,40 @@ struct CharacterProfile: Codable, Identifiable, Hashable {
 final class CastStore: ObservableObject {
     /// game key → character key → profile
     @Published private(set) var games: [String: [String: CharacterProfile]] = [:]
+    /// game key → the game's own words (places, items, creatures, moves) and how to say them.
+    @Published private(set) var vocabulary: [String: [GameTerm]] = [:]
 
     private let url: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("cast.json")
     }()
+    private var vocabURL: URL { url.deletingLastPathComponent().appendingPathComponent("vocabulary.json") }
 
     init() {
         if let data = try? Data(contentsOf: url),
            let saved = try? JSONDecoder().decode([String: [String: CharacterProfile]].self, from: data) {
             games = saved
         }
+        if let data = try? Data(contentsOf: vocabURL),
+           let saved = try? JSONDecoder().decode([String: [GameTerm]].self, from: data) {
+            vocabulary = saved
+        }
+    }
+
+    func terms(for game: String) -> [GameTerm] { vocabulary[Self.gameKey(game)] ?? [] }
+
+    func setTerms(_ terms: [GameTerm], game: String) {
+        vocabulary[Self.gameKey(game)] = terms
+        if let data = try? JSONEncoder().encode(vocabulary) { try? data.write(to: vocabURL, options: .atomic) }
+    }
+
+    /// Respellings for the speech voice: game words, then character names.
+    func pronunciations(for game: String) -> [String: String] {
+        var map: [String: String] = [:]
+        for t in terms(for: game) { if let say = t.say, !say.isEmpty { map[t.word] = say } }
+        for p in cast(for: game) { if let say = p.say, !say.isEmpty { map[p.name] = say } }
+        return map
     }
 
     static func gameKey(_ game: String) -> String { DialogueTracker.normalize(game) }
@@ -99,6 +123,12 @@ final class CastStore: ObservableObject {
     private func save() {
         if let data = try? JSONEncoder().encode(games) { try? data.write(to: url, options: .atomic) }
     }
+}
+
+/// A word from a game's own vocabulary.
+struct GameTerm: Codable, Hashable {
+    var word: String
+    var say: String?
 }
 
 /// Chooses an installed voice that fits a character.

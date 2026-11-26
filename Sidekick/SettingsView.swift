@@ -20,12 +20,12 @@ struct SettingsView: View {
                 cameraSection
                 Section("Tips") {
                     Text("Prop the iPad up so the whole TV or Switch screen is in view, then make the reading box cover just the dialogue area so the map and menus aren't read out.")
-                    Text("Better voices: on the iPad, open Settings › Accessibility › Spoken Content › Voices › English and download a few Enhanced or Premium voices. They show up here after you reopen Navi.")
+                    Text("Better voices: on the iPad, open Settings › Accessibility › Spoken Content › Voices › English and download a few Enhanced or Premium voices. They show up here after you reopen Sidekick.")
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
-            .navigationTitle("Navi")
+            .navigationTitle("Sidekick")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
@@ -84,7 +84,7 @@ struct SettingsView: View {
         } header: {
             Text("Characters")
         } footer: {
-            Text("Navi reads the speaker's name above the dialogue. Characters it hasn't met yet get looked up automatically when a Claude key is set; you can change any voice by hand.")
+            Text("Sidekick reads the speaker's name above the dialogue. Characters it hasn't met yet get looked up automatically when a Claude key is set; you can change any voice by hand.")
         }
     }
 
@@ -157,7 +157,7 @@ struct CastView: View {
         List {
             Section {
                 if people.isEmpty {
-                    Text("No characters yet. They're added as Navi sees their names, or look them all up with Claude.")
+                    Text("No characters yet. They're added as Sidekick sees their names, or look them all up with Claude.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(people) { p in
@@ -296,7 +296,7 @@ struct GameVoiceSection: View {
             Toggle("Stay quiet when the game is talking", isOn: $reader.quietWhenGameTalks)
             if reader.quietWhenGameTalks {
                 if listener.available == false {
-                    Label("Navi can't use the microphone. Allow it in the iPad's Settings › Navi.",
+                    Label("Sidekick can't use the microphone. Allow it in the iPad's Settings › Sidekick.",
                           systemImage: "mic.slash.fill")
                         .foregroundStyle(.orange)
                 } else {
@@ -314,7 +314,7 @@ struct GameVoiceSection: View {
         } header: {
             Text("Voiced cutscenes")
         } footer: {
-            Text("Navi listens for voice acting (on this iPad, nothing is recorded or sent). When a subtitle appears while the game is speaking, Navi shows it but doesn't read it; tap the repeat button to hear it anyway. Short grunts and \"Hmm!\" sounds don't count. People talking in the room can also make Navi stay quiet, so raise the setting if it skips lines it should read.")
+            Text("Sidekick listens for voice acting (on this iPad, nothing is recorded or sent). When a subtitle appears while the game is speaking, Sidekick shows it but doesn't read it; tap the repeat button to hear it anyway. Short grunts and \"Hmm!\" sounds don't count. People talking in the room can also make Sidekick stay quiet, so raise the setting if it skips lines it should read.")
         }
     }
 }

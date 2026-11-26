@@ -22,7 +22,7 @@ struct CameraPreview: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewView, context: Context) {}
 }
 
-/// The camera picture with the reading box and the text Navi can see.
+/// The camera picture with the reading box and the text Sidekick can see.
 struct CameraStage: View {
     @ObservedObject var camera: CameraModel
     @Binding var region: CGRect
@@ -53,7 +53,7 @@ struct CameraStage: View {
     }
 }
 
-/// The area Navi reads. Drag to move; drag the yellow dot to resize.
+/// The area Sidekick reads. Drag to move; drag the yellow dot to resize.
 struct RegionBox: View {
     @Binding var region: CGRect
     let frame: CGRect

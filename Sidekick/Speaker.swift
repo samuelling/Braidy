@@ -7,6 +7,8 @@ struct VoiceStyle {
     var pitch: Float = 1.0
     /// Multiplier on the base speed.
     var rate: Float = 1.0
+    /// Word → respelling for this game's names and terms.
+    var pronunciations: [String: String] = [:]
 }
 
 /// Text-to-speech with a few game-name pronunciation fixes.
@@ -22,7 +24,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable 
     }
 
     func speak(_ text: String, style: VoiceStyle) {
-        let spoken = Pronounce.prepare(text)
+        let spoken = Pronounce.prepare(text, extra: style.pronunciations)
         guard !spoken.isEmpty else { return }
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         let u = AVSpeechUtterance(string: spoken)
@@ -82,7 +84,8 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable 
 }
 
 enum Pronounce {
-    /// Spelled the way the speech engine gets them right.
+    /// Common franchise words, spelled the way the speech engine gets them right.
+    /// Each game adds its own through Claude's vocabulary lookup.
     private static let fixes: [(String, String)] = [
         ("Hyrule", "Hi-rule"), ("Zonai", "Zoh-nye"), ("Sheikah", "Shay-kah"), ("Gerudo", "Geh-roo-doe"),
         ("Koroks", "Koh-rocks"), ("Korok", "Koh-rock"), ("Rito", "Ree-toe"), ("Lynel", "Lie-nel"),
@@ -96,10 +99,16 @@ enum Pronounce {
     private static let allowed = CharacterSet.letters.union(.decimalDigits).union(.whitespaces)
         .union(CharacterSet(charactersIn: ".,!?'’\"“”-—:;()…%&"))
 
-    static func prepare(_ text: String) -> String {
+    static func prepare(_ text: String, extra: [String: String] = [:]) -> String {
         // Drop on-screen glyphs (▼, button icons misread as symbols).
         var s = String(String.UnicodeScalarView(text.unicodeScalars.map { allowed.contains($0) ? $0 : " " }))
-        for (re, say) in regexes {
+        // Longest words first, so "Koroks" wins over "Korok".
+        let gameFixes: [(NSRegularExpression, String)] = extra.sorted { $0.key.count > $1.key.count }.compactMap { word, say in
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+            guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+            return (re, NSRegularExpression.escapedTemplate(for: say))
+        }
+        for (re, say) in gameFixes + regexes {
             s = re.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: say)
         }
         return s.split(separator: " ").joined(separator: " ")

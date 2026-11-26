@@ -9,26 +9,33 @@ final class Reader: ObservableObject {
     private let speaker = Speaker()
     private var tracker = DialogueTracker()
     private let defaults = UserDefaults.standard
-    private let audioQueue = DispatchQueue(label: "navi.audio-session")
+    private let audioQueue = DispatchQueue(label: "sidekick.audio-session")
 
     static let defaultRegion = CGRect(x: 0.06, y: 0.55, width: 0.88, height: 0.4)
     static let suggestedGames = [
+        "Pokémon Scarlet and Violet",
+        "Pokémon Legends: Z-A",
+        "Pokémon: Let's Go, Pikachu! and Let's Go, Eevee!",
+        "Super Mario Bros. Wonder",
+        "Super Mario Odyssey",
+        "Paper Mario: The Thousand-Year Door",
+        "Kirby and the Forgotten Land",
+        "Animal Crossing: New Horizons",
+        "Donkey Kong Bananza",
+        "Luigi's Mansion 3",
+        "Minecraft",
+        "Splatoon 3",
         "The Legend of Zelda: Tears of the Kingdom",
         "The Legend of Zelda: Breath of the Wild",
         "The Legend of Zelda: Echoes of Wisdom",
         "The Legend of Zelda: Link's Awakening",
-        "The Legend of Zelda: Skyward Sword HD",
-        "Pokémon Scarlet and Violet",
-        "Pokémon Legends: Z-A",
-        "Super Mario Odyssey",
-        "Animal Crossing: New Horizons",
     ]
 
     let voices: [AVSpeechSynthesisVoice]
 
     @Published var lastLine = ""
     @Published var lastSpeaker: String?
-    /// The last line was voiced by the game itself, so Navi stayed quiet.
+    /// The last line was voiced by the game itself, so Sidekick stayed quiet.
     @Published var lastLineWasVoiced = false
     @Published var isSpeaking = false
     @Published var status: String?
@@ -46,7 +53,10 @@ final class Reader: ObservableObject {
     @Published var region: CGRect {
         didSet {
             camera.setRegion(region)
-            defaults.set([region.minX, region.minY, region.width, region.height], forKey: "region")
+            let saved = [region.minX, region.minY, region.width, region.height]
+            defaults.set(saved, forKey: "region")
+            // Each game puts its text somewhere different, so remember the box per game.
+            if !game.isEmpty { defaults.set(saved, forKey: Self.regionKey(game)) }
         }
     }
     @Published var rate: Double {
@@ -62,6 +72,7 @@ final class Reader: ObservableObject {
     @Published var game: String {
         didSet {
             defaults.set(game, forKey: "game")
+            if let r = Self.savedRegion(defaults, key: Self.regionKey(game)), r != region { region = r }
             updateCustomWords()
         }
     }
@@ -97,17 +108,15 @@ final class Reader: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        if let a = d.array(forKey: "region") as? [Double], a.count == 4 {
-            region = CGRect(x: a[0], y: a[1], width: a[2], height: a[3])
-        } else {
-            region = Self.defaultRegion
-        }
+        let savedGame = d.string(forKey: "game") ?? ""
+        region = Self.savedRegion(d, key: Self.regionKey(savedGame))
+            ?? Self.savedRegion(d, key: "region") ?? Self.defaultRegion
         rate = d.object(forKey: "rate") as? Double ?? 0.42
         let vs = Speaker.englishVoices()
         voices = vs
         narratorVoice = d.string(forKey: "voice") ?? (vs.first?.identifier ?? "")
         zoom = d.object(forKey: "zoom") as? Double ?? 1
-        game = d.string(forKey: "game") ?? ""
+        game = savedGame
         characterVoices = d.object(forKey: "characterVoices") as? Bool ?? true
         sayNames = d.object(forKey: "sayNames") as? Bool ?? false
         quietWhenGameTalks = d.object(forKey: "quietWhenGameTalks") as? Bool ?? true
@@ -124,6 +133,13 @@ final class Reader: ObservableObject {
         }
         camera.onFrame = { [weak self] rows in self?.handle(rows) }
         updateCustomWords()
+    }
+
+    static func regionKey(_ game: String) -> String { "region." + CastStore.gameKey(game) }
+
+    static func savedRegion(_ d: UserDefaults, key: String) -> CGRect? {
+        guard let a = d.array(forKey: key) as? [Double], a.count == 4 else { return nil }
+        return CGRect(x: a[0], y: a[1], width: a[2], height: a[3])
     }
 
     func start() {
@@ -172,7 +188,7 @@ final class Reader: ObservableObject {
     /// Speak a settled line, unless the game is voicing it.
     ///
     /// Subtitles and the actor's voice start together, but the sound classifier needs a moment to
-    /// be sure it hears speech. So a settled line waits ~0.7 s, then Navi checks whether the game
+    /// be sure it hears speech. So a settled line waits ~0.7 s, then Sidekick checks whether the game
     /// spoke from 1.5 s before the line settled until now. If it did, the line is shown but not read.
     private func deliver(_ line: String, from name: String?) {
         pendingLine?.cancel()
@@ -232,14 +248,16 @@ final class Reader: ObservableObject {
     }
 
     func test(_ profile: CharacterProfile? = nil) {
-        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hey! Listen! I'll read the words on the screen."
+        let line = profile.map { "Hi, I'm \($0.name)!" } ?? "Hi! I'm your sidekick. I'll read the words on the screen for you."
         speaker.speak(line, style: style(for: profile))
     }
 
     func style(for p: CharacterProfile?) -> VoiceStyle {
-        guard characterVoices, let p else { return VoiceStyle(voiceID: narratorVoice) }
+        guard characterVoices, let p else {
+            return VoiceStyle(voiceID: narratorVoice, pronunciations: pronunciations)
+        }
         return VoiceStyle(voiceID: p.voiceID.isEmpty ? narratorVoice : p.voiceID,
-                          pitch: Float(p.pitch), rate: Float(p.rate))
+                          pitch: Float(p.pitch), rate: Float(p.rate), pronunciations: pronunciations)
     }
 
     // MARK: Cast
@@ -278,8 +296,12 @@ final class Reader: ObservableObject {
         let client = self.client, game = self.game
         Task { @MainActor [weak self] in
             do {
-                let entries = try await client.lookUpCast(game: game)
+                let reply = try await client.lookUpCast(game: game)
+                let entries = reply.characters
                 guard let self else { return }
+                if let terms = reply.terms {
+                    self.cast.setTerms(terms.map { GameTerm(word: $0.word, say: $0.say) }, game: game)
+                }
                 for e in entries {
                     let existing = self.cast.match(e.name, game: game) ?? CharacterProfile(name: e.name)
                     self.apply(e, to: existing, game: game)
@@ -304,6 +326,7 @@ final class Reader: ObservableObject {
         p.species = e.species ?? p.species
         p.age = (e.age ?? p.age).lowercased()
         p.about = e.about ?? p.about
+        if let say = e.say, !say.isEmpty { p.say = say }
         if !p.voiceLocked {
             if let pitch = e.pitch { p.pitch = min(max(pitch, 0.5), 2.0) } else { VoiceCasting.defaultStyle(&p) }
             if let rate = e.rate { p.rate = min(max(rate, 0.6), 1.5) }
@@ -342,8 +365,14 @@ final class Reader: ObservableObject {
         }
     }
 
+    /// Respellings for this game's names and words (from Claude's lookups).
+    private var pronunciations: [String: String] = [:]
+
+    /// Teach OCR this game's names and words, and refresh their pronunciations.
     private func updateCustomWords() {
         let names = cast.names(for: game).flatMap { $0.split(separator: " ").map(String.init) }
-        camera.customWords = Array(Set(CameraModel.gameWords + names))
+        let terms = cast.terms(for: game).flatMap { $0.word.split(separator: " ").map(String.init) }
+        camera.customWords = Array(Set(CameraModel.commonWords + names + terms))
+        pronunciations = cast.pronunciations(for: game)
     }
 }

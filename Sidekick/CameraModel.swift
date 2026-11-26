@@ -23,7 +23,7 @@ final class CameraModel: NSObject, ObservableObject {
         didSet { let words = customWords; videoQueue.async { self.request.customWords = words } }
     }
 
-    private let videoQueue = DispatchQueue(label: "navi.video")
+    private let videoQueue = DispatchQueue(label: "sidekick.video")
     private let output = AVCaptureVideoDataOutput()
     private var device: AVCaptureDevice?
     private weak var previewLayer: AVCaptureVideoPreviewLayer?
@@ -42,11 +42,14 @@ final class CameraModel: NSObject, ObservableObject {
         r.recognitionLevel = .accurate
         r.recognitionLanguages = ["en-US"]
         r.usesLanguageCorrection = true
-        r.customWords = Self.gameWords
+        r.customWords = Self.commonWords
         return r
     }()
 
-    static let gameWords = ["Hyrule", "Zelda", "Link", "Zonai", "Sheikah", "Gerudo", "Goron", "Zora", "Rito",
+    /// Words from popular kids' games that OCR's English correction would otherwise "fix".
+    /// Each game adds its own (character names and vocabulary from Claude).
+    static let commonWords = ["Pokémon", "Pokemon", "Pikachu", "Eevee", "Mario", "Luigi", "Bowser", "Yoshi",
+                            "Toad", "Kirby", "Hyrule", "Zelda", "Link", "Zonai", "Sheikah", "Gerudo", "Goron", "Zora", "Rito",
                             "Korok", "Koroks", "Purah", "Robbie", "Josha", "Impa", "Paya", "Sidon", "Riju",
                             "Tulin", "Yunobo", "Rauru", "Mineru", "Sonia", "Ganondorf", "Ganon", "Kakariko",
                             "Hateno", "Lurelin", "Tarrey", "Bokoblin", "Moblin", "Lizalfos", "Lynel", "Hinox",

@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct NaviApp: App {
+struct SidekickApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

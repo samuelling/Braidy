@@ -4,12 +4,12 @@ import SoundAnalysis
 /// Listens through the microphone for the game's own voice acting.
 ///
 /// Apple's built-in sound classifier (SoundAnalysis, ~300 everyday sounds) scores each ~1 s window
-/// of audio, hopping every ~0.25 s. Navi watches the speech-like categories. A voiced cutscene line
+/// of audio, hopping every ~0.25 s. Sidekick watches the speech-like categories. A voiced cutscene line
 /// gives seconds of sustained speech; an NPC's grunt or "Hmm!" gives one or two windows. So "the game
 /// is talking" means speech in at least ~0.75 s worth of windows, not a single hit.
 ///
-/// Navi's own voice is heard by the same microphone, so results are ignored while Navi is speaking
-/// and for a moment after (the classifier window still contains the tail of Navi's line).
+/// Sidekick's own voice is heard by the same microphone, so results are ignored while Sidekick is speaking
+/// and for a moment after (the classifier window still contains the tail of Sidekick's line).
 final class VoiceListener: NSObject, ObservableObject {
     /// Speech heard just now (drives the on-screen indicator).
     @Published private(set) var gameTalking = false
@@ -23,7 +23,7 @@ final class VoiceListener: NSObject, ObservableObject {
 
     private let engine = AVAudioEngine()
     private var analyzer: SNAudioStreamAnalyzer?
-    private let analysisQueue = DispatchQueue(label: "navi.sound")
+    private let analysisQueue = DispatchQueue(label: "sidekick.sound")
     private var hits: [(time: Date, confidence: Double)] = []
     private var selfSpeaking = false
     private var ignoreUntil = Date.distantPast
@@ -106,11 +106,11 @@ final class VoiceListener: NSObject, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.begin() }
     }
 
-    // MARK: Navi's own voice
+    // MARK: Sidekick's own voice
 
     func setSelfSpeaking(_ speaking: Bool) {
         selfSpeaking = speaking
-        // The classifier window is ~1 s, so it keeps hearing Navi briefly after it stops.
+        // The classifier window is ~1 s, so it keeps hearing Sidekick briefly after it stops.
         if !speaking { ignoreUntil = Date().addingTimeInterval(1.1) }
     }
 
