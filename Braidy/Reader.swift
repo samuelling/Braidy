@@ -126,6 +126,24 @@ final class Reader: ObservableObject {
     @Published var sayNames: Bool {
         didSet { defaults.set(sayNames, forKey: "sayNames") }
     }
+    /// Quick speed presets for the main screen's speed button (base speech rates).
+    static let speedPresets: [(name: String, icon: String, rate: Double)] = [
+        ("SLOW", "tortoise.fill", 0.34), ("NORMAL", "figure.walk", 0.42), ("FAST", "hare.fill", 0.52),
+    ]
+
+    /// Which preset the current speed is closest to.
+    var speedPreset: Int {
+        let presets = Self.speedPresets
+        return presets.indices.min { abs(presets[$0].rate - rate) < abs(presets[$1].rate - rate) } ?? 1
+    }
+
+    /// Slow → Normal → Fast → Slow, then say the last line again at the new speed.
+    func cycleSpeed() {
+        let next = (speedPreset + 1) % Self.speedPresets.count
+        rate = Self.speedPresets[next].rate
+        if !lastLine.isEmpty { repeatLast() }
+    }
+
     /// Expressive voices: each line is performed with an emotion picked from its words and the lines
     /// before it (on this iPad), as an ElevenLabs audio tag or a small pitch/speed change.
     @Published var expressive: Bool {

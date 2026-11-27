@@ -265,14 +265,28 @@ struct ControlBar: View {
     var compact: Bool
 
     var body: some View {
-        HStack(spacing: compact ? 14 : 26) {
+        let preset = Reader.speedPresets[reader.speedPreset]
+        HStack(spacing: compact ? 10 : 26) {
+            // Reading speed: tap to cycle slow / normal / fast (and hear the last line again).
+            Button { reader.cycleSpeed() } label: {
+                VStack(spacing: 2) {
+                    Image(systemName: preset.icon).font(.system(size: compact ? 18 : 22, weight: .black))
+                    Text(preset.name).font(Theme.title(compact ? 9 : 11)).tracking(0.5)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+                .frame(width: compact ? 58 : 84, height: compact ? 58 : 72)
+            }
+            .buttonStyle(ChunkyButtonStyle(color: Theme.yellow, textColor: Theme.night,
+                                           shape: AnyShape(RoundedRectangle(cornerRadius: 18, style: .continuous))))
+            .accessibilityLabel("Reading speed: \(preset.name.lowercased()). Tap to change.")
+
             Button { reader.listening.toggle() } label: {
                 VStack(spacing: 2) {
                     Image(systemName: reader.listening ? "pause.fill" : "play.fill")
                         .font(.system(size: compact ? 22 : 26, weight: .black))
                     Text(reader.listening ? "PAUSE" : "GO").font(Theme.title(compact ? 11 : 13)).tracking(1)
                 }
-                .frame(width: compact ? 78 : 112, height: compact ? 62 : 72)
+                .frame(width: compact ? 70 : 112, height: compact ? 62 : 72)
             }
             .buttonStyle(ChunkyButtonStyle(color: reader.listening ? Theme.violet : Theme.green, textColor: .white,
                                            shape: AnyShape(RoundedRectangle(cornerRadius: 20, style: .continuous))))
@@ -284,7 +298,7 @@ struct ControlBar: View {
                         .font(.system(size: compact ? 34 : 44, weight: .black))
                     Text("AGAIN").font(Theme.title(compact ? 12 : 14)).tracking(1)
                 }
-                .frame(width: compact ? 96 : 124, height: compact ? 96 : 124)
+                .frame(width: compact ? 90 : 124, height: compact ? 90 : 124)
             }
             .buttonStyle(ChunkyButtonStyle(color: Theme.pink, textColor: .white, shape: AnyShape(Circle()), depth: 8))
             .disabled(reader.lastLine.isEmpty)
@@ -296,7 +310,7 @@ struct ControlBar: View {
                     Image(systemName: "text.viewfinder").font(.system(size: compact ? 22 : 26, weight: .black))
                     Text("READ").font(Theme.title(compact ? 11 : 13)).tracking(1)
                 }
-                .frame(width: compact ? 78 : 112, height: compact ? 62 : 72)
+                .frame(width: compact ? 70 : 112, height: compact ? 62 : 72)
             }
             .buttonStyle(ChunkyButtonStyle(color: Theme.cyan, textColor: Theme.night,
                                            shape: AnyShape(RoundedRectangle(cornerRadius: 20, style: .continuous))))
