@@ -66,6 +66,7 @@ final class Reader: ObservableObject {
             camera.setListening(listening)
             if !listening {
                 pendingLine?.cancel()
+                moodTask?.cancel()
                 speaker.stop()
             }
         }
@@ -424,7 +425,7 @@ final class Reader: ObservableObject {
         lastLineWasVoiced = false
         var text = line
         if sayNames, let who = lastSpeaker { text = "\(who): \(line)" }
-        var st = style(for: profile)
+        let st = style(for: profile)
         let context = recentLines
         recentLines = Array((recentLines + ["\(lastSpeaker ?? "Narration"): \(line)"]).suffix(3))
         moodTask?.cancel()
@@ -437,9 +438,10 @@ final class Reader: ObservableObject {
         moodTask = Task { @MainActor [weak self] in
             let mood = await MoodReader.mood(for: line, speaker: who, about: about, context: context, game: game)
             guard let self, !Task.isCancelled else { return }
-            st.mood = mood
+            var acted = st
+            acted.mood = mood
             self.lastMood = mood
-            self.speaker.speak(text, style: st)
+            self.speaker.speak(text, style: acted)
         }
     }
 
