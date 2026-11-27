@@ -36,7 +36,7 @@ struct HowItWorksView: View {
                 ExplainRow(icon: "person.2.wave.2.fill", color: Theme.pink, title: "3 · Who's talking?",
                            text: "Many games show the speaker's name above the words. Braidy spots it and gives each character their own voice. Text is read left to right, so answers to choose from come after the question.")
                 ExplainRow(icon: "speaker.wave.3.fill", color: Theme.green, title: "4 · Speak",
-                           text: "Lines are read with the device's own voices (free), or with ElevenLabs' natural voices if you turn that extra on.")
+                           text: "Lines are read with the device's own voices (free), or with ElevenLabs' natural voices if you turn that extra on. With Expressive voices, each line is acted with an emotion (excited, sad, whispering…) picked from its words and the lines before it.")
                 ExplainRow(icon: "waveform", color: Theme.violet, title: "5 · Don't talk over the game",
                            text: "When a game has voice actors, Braidy hears them through the microphone and stays quiet, showing the words instead. The sound is only checked for \"is someone talking?\", never recorded.")
                 ExplainRow(icon: "sparkles", color: Theme.cyan, title: "6 · Learn the game (optional)",
@@ -78,13 +78,13 @@ struct PrivacyView: View {
                 ExplainRow(icon: "internaldrive.fill", color: Theme.pink, title: "What's kept",
                            text: "Your settings, the reading box and character list for each game, and (with ElevenLabs) the saved audio of lines already read. You can clear the saved audio in Options. Deleting the app removes everything.")
                 ExplainRow(icon: "person.crop.circle.badge.xmark", color: Theme.green, title: "No accounts, ads or tracking",
-                           text: "Braidy has no sign-up, no analytics, no ads and no tracking. Your child never types anything into it.")
+                           text: "Braidy has no sign-up, no analytics, no ads and no tracking. Your child never types anything into it. Expressive voices pick each line's emotion on this iPad, using Apple Intelligence where it's available, so that sends nothing anywhere.")
 
                 Text("ONLY IF YOU TURN ON AN EXTRA").font(Theme.title(14)).tracking(1.5).foregroundStyle(Theme.yellow)
                 ExplainRow(icon: "sparkles", color: Theme.cyan, title: "Claude (by Anthropic)",
                            text: "Receives the game's name, character names Braidy sees on screen, and anything you type in the game search. If you tap \"Ask Claude which game is on screen\", one camera picture is sent for that question. The words being read aloud are never sent to Claude.")
                 ExplainRow(icon: "waveform.circle.fill", color: Theme.pink, title: "ElevenLabs",
-                           text: "Receives the text of each line so it can turn it into speech. The audio comes back and is saved on this device, so the same line isn't sent twice. ElevenLabs may keep a history of generated audio in your ElevenLabs account. If you design custom character voices, it also receives each voice's written description, and the voices are saved in your ElevenLabs account until you remove them.")
+                           text: "Receives the text of each line so it can turn it into speech. The audio comes back and is saved on this device, so the same line isn't sent twice. With Expressive voices on, a one-word emotion like [excited] goes with the line. ElevenLabs may keep a history of generated audio in your ElevenLabs account. If you design custom character voices, it also receives each voice's written description, and the voices are saved in your ElevenLabs account until you remove them.")
                 ExplainRow(icon: "key.fill", color: Theme.yellow, title: "Your keys",
                            text: "The keys that connect the extras are stored in this device's secure Keychain and only ever sent to that company. Remove them any time in Options › Extras.")
 

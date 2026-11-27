@@ -76,6 +76,16 @@ struct OptionsView: View {
         }
     }
 
+    private var expressiveNote: String {
+        var note = MoodReader.onDevice
+            ? "Each line gets an emotion, picked on this iPad by Apple Intelligence. Nothing is sent anywhere."
+            : "Each line gets an emotion from its punctuation and words, worked out on this iPad."
+        if reader.usingEleven && !ElevenClient.takesAudioTags(reader.elevenModel) {
+            note += " For real acting, set ElevenLabs Quality to Most expressive (v4)."
+        }
+        return note
+    }
+
     private var charactersSection: some View {
         Section {
             Toggle(isOn: $reader.characterVoices) {
@@ -83,6 +93,15 @@ struct OptionsView: View {
             }
             Toggle(isOn: $reader.sayNames) {
                 HStack { MenuIcon("tag.fill", Theme.yellow); Text("Say the character's name first") }
+            }
+            Toggle(isOn: $reader.expressive) {
+                HStack {
+                    MenuIcon("theatermasks.fill", Theme.violet)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Expressive voices")
+                        Text(expressiveNote).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             Toggle(isOn: $reader.brodie) {
                 HStack { MenuIcon("face.smiling.inverse", Theme.cyan); Text("Bubble Buddy says \u{201C}brodie\u{201D}") }

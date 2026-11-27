@@ -11,6 +11,8 @@ struct VoiceStyle {
     var pronunciations: [String: String] = [:]
     /// ElevenLabs voice to use when that engine is on.
     var elevenVoiceID: String?
+    /// How to perform the line, when Expressive voices is on.
+    var mood: Mood? = nil
 }
 
 /// Text-to-speech with a few game-name pronunciation fixes.
@@ -57,10 +59,14 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
             // ElevenLabs accepts speed 0.7–1.2; the user's base speed (0.42 ≈ normal) scales it too.
             let speed = min(max((Double(baseRate) / 0.45) * (1 + (Double(style.rate) - 1) * 0.6), 0.7), 1.2)
             let model = elevenModel
+            // The expressive model takes the mood as an audio tag; the tag is part of the cache key,
+            // so a line said sadly in one scene and happily in another is kept as two recordings.
+            var said = clean
+            if ElevenClient.takesAudioTags(model), let tag = style.mood?.elevenTag { said = "[\(tag)] " + clean }
             fetch = Task { [weak self] in
                 do {
-                    let data = try await AudioCache.shared.audio(text: clean, voiceID: voice, model: model, speed: speed) {
-                        try await client.speech(clean, voiceID: voice, model: model, speed: speed)
+                    let data = try await AudioCache.shared.audio(text: said, voiceID: voice, model: model, speed: speed) {
+                        try await client.speech(said, voiceID: voice, model: model, speed: speed)
                     }
                     try Task.checkCancellation()
                     await MainActor.run { self?.play(data) }
@@ -96,9 +102,9 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegat
         let u = AVSpeechUtterance(string: spoken)
         // Big pitch and speed shifts make the synthesizer sound robotic, so a character's settings are
         // compressed toward natural: pitch 0.5–2.0 maps to about 0.8–1.35, speed changes are softened.
-        let rate = baseRate * (1 + (style.rate - 1) * 0.6)
+        let rate = baseRate * (1 + (style.rate - 1) * 0.6) * (style.mood?.rate ?? 1)
         u.rate = min(max(rate, AVSpeechUtteranceMinimumSpeechRate), AVSpeechUtteranceMaximumSpeechRate)
-        u.pitchMultiplier = min(max(1 + (style.pitch - 1) * 0.5, 0.8), 1.35)
+        u.pitchMultiplier = min(max((1 + (style.pitch - 1) * 0.5) * (style.mood?.pitch ?? 1), 0.75), 1.4)
         u.postUtteranceDelay = 0.1
         u.voice = AVSpeechSynthesisVoice(identifier: style.voiceID) ?? AVSpeechSynthesisVoice(language: "en-US")
         synth.speak(u)

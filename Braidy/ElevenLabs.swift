@@ -100,6 +100,11 @@ struct ElevenClient {
 
     static let designedPrefix = "Braidy · "
 
+    /// Models that perform bracketed audio tags like "[excited]" (older ones would read them aloud).
+    static func takesAudioTags(_ model: String) -> Bool {
+        model.hasPrefix("eleven_v3") || model.hasPrefix("eleven_v4")
+    }
+
     struct VoicePreview: Identifiable {
         var id: String { generatedID }
         let generatedID: String

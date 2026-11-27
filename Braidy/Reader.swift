@@ -125,6 +125,15 @@ final class Reader: ObservableObject {
     @Published var sayNames: Bool {
         didSet { defaults.set(sayNames, forKey: "sayNames") }
     }
+    /// Expressive voices: each line is performed with an emotion picked from its words and the lines
+    /// before it (on this iPad), as an ElevenLabs audio tag or a small pitch/speed change.
+    @Published var expressive: Bool {
+        didSet { defaults.set(expressive, forKey: "expressive") }
+    }
+    /// The mood of the last line, shown in the dialogue box and reused by AGAIN.
+    @Published private(set) var lastMood: Mood?
+    private var recentLines: [String] = []
+    private var moodTask: Task<Void, Never>?
     /// Silly mode: Bubble Buddy calls the player "brodie" now and then.
     @Published var brodie: Bool {
         didSet { defaults.set(brodie, forKey: "brodie") }
@@ -234,6 +243,7 @@ final class Reader: ObservableObject {
         characterVoices = d.object(forKey: "characterVoices") as? Bool ?? true
         sayNames = d.object(forKey: "sayNames") as? Bool ?? false
         brodie = d.object(forKey: "brodie") as? Bool ?? false
+        expressive = d.object(forKey: "expressive") as? Bool ?? true
         quietWhenGameTalks = d.object(forKey: "quietWhenGameTalks") as? Bool ?? true
         voiceSensitivity = d.object(forKey: "voiceSensitivity") as? Double ?? 0.5
         apiKey = Keychain.load()
@@ -414,7 +424,23 @@ final class Reader: ObservableObject {
         lastLineWasVoiced = false
         var text = line
         if sayNames, let who = lastSpeaker { text = "\(who): \(line)" }
-        speaker.speak(text, style: style(for: profile))
+        var st = style(for: profile)
+        let context = recentLines
+        recentLines = Array((recentLines + ["\(lastSpeaker ?? "Narration"): \(line)"]).suffix(3))
+        moodTask?.cancel()
+        guard expressive else {
+            lastMood = nil
+            speaker.speak(text, style: st)
+            return
+        }
+        let who = lastSpeaker, about = profile?.about, game = self.game
+        moodTask = Task { @MainActor [weak self] in
+            let mood = await MoodReader.mood(for: line, speaker: who, about: about, context: context, game: game)
+            guard let self, !Task.isCancelled else { return }
+            st.mood = mood
+            self.lastMood = mood
+            self.speaker.speak(text, style: st)
+        }
     }
 
     func repeatLast() {
@@ -422,12 +448,14 @@ final class Reader: ObservableObject {
         let profile = lastSpeaker.flatMap { cast.match($0, game: game) }
         var text = lastLine
         if sayNames, let who = lastSpeaker { text = "\(who): \(lastLine)" }
+        var lineStyle = style(for: profile)
+        lineStyle.mood = expressive ? lastMood : nil
         if brodie, Bool.random() {
             // Bubble Buddy chimes in first, in the narrator voice, then the line in its own voice.
             let quip = ["Again, brodie!", "One more time, brodie!", "Okay brodie, here it is again!"].randomElement()!
-            speaker.speak(quip, style: style(for: nil), then: (text, style(for: profile)))
+            speaker.speak(quip, style: style(for: nil), then: (text, lineStyle))
         } else {
-            speaker.speak(text, style: style(for: profile))
+            speaker.speak(text, style: lineStyle)
         }
     }
 
